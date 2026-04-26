@@ -19,7 +19,7 @@ import './App.css'
 // ── Constants ──
 
 const BLUE_FALLBACK = 1200
-const API_BASE = 'http://localhost:3001/api'
+const API_BASE = '/api'
 
 const CRYPTO_MAP = {
   BTC: 'bitcoin',
@@ -50,18 +50,22 @@ const ASSET_COLORS = {
   BTC: '#F7931A',
   ETH: '#627EEA',
   BNB: '#F3BA2F',
-  RON: '#1A73E8',
+  RON: '#1273EA',
   META: '#0668E1',
-  MSFT: '#00BCF2',
-  NU: '#820AD1',
+  MSFT: '#00A4EF',
+  NU: '#9B4DFF',
 }
+
+const ACCENT = '#7C9BFF'
+const MUTE = '#52525B'
+const LINE = '#1F1F24'
 
 const TYPE_BORDER = {
   crypto: '#F7931A',
-  cedear: '#00A3E0',
-  accion: '#8b5cf6',
-  bono: '#06b6d4',
-  fci: '#ec4899',
+  cedear: '#7C9BFF',
+  accion: '#a78bfa',
+  bono: '#22d3ee',
+  fci: '#f472b6',
 }
 
 const TYPE_LABELS = {
@@ -199,6 +203,7 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
 
     return {
       date: new Date(dateStr).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: '2-digit' }),
+      rawDate: dateStr,
       invertido: Math.round(cumCost * 100) / 100,
       valor: hasHistory ? Math.round(valor * 100) / 100 : undefined,
     }
@@ -287,6 +292,7 @@ function App() {
     }
   })
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [evoFilter, setEvoFilter] = useState('TODO')
   const [currency, setCurrency] = useState('USD')
   const [blueRate, setBlueRate] = useState(BLUE_FALLBACK)
   const [blueLoading, setBlueLoading] = useState(true)
@@ -565,6 +571,16 @@ function App() {
   // Evolution data for AreaChart
   const evolutionData = computeEvolutionData(transactions, positions, livePrices, historicalPrices)
 
+  const filteredEvolutionData = (() => {
+    if (evoFilter === 'TODO') return evolutionData
+    const daysMap = { '1M': 30, '3M': 90, '6M': 180, '1A': 365 }
+    const days = daysMap[evoFilter]
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    const cutoffStr = cutoff.toISOString().slice(0, 10)
+    return evolutionData.filter((p) => p.rawDate >= cutoffStr)
+  })()
+
   // Bar data: horizontal, sorted by value desc, with P&L
   const barData = positions
     .map((p) => {
@@ -594,160 +610,342 @@ function App() {
 
   // ── Render ──
 
+  // Hero display: split value into whole/cents parts
+  const heroValueRaw = Math.abs(convert(totalValue))
+  const heroWhole = Math.trunc(heroValueRaw).toLocaleString('es-AR')
+  const heroCents = heroValueRaw.toFixed(2).split('.')[1] || '00'
+
+  const topAsset = donutData[0]
+  const topAssetPct = topAsset && totalValue > 0 ? (topAsset.value / totalValue) * 100 : 0
+  const cryptoCount = positions.filter((p) => p.assetType === 'crypto').length
+  const stockCount = positions.filter((p) => p.assetType === 'cedear' || p.assetType === 'accion').length
+  const bestMover = ranked[0]
+
   return (
     <div className="app">
-      {/* ── Header ── */}
-      <header className="header">
-        <div className="header-brand">
-          <span className="logo-icon">&#9650;</span>
-          <span className="logo-text">PORTFOLIO</span>
-        </div>
-        <div className="header-portfolio">
-          <span className="header-total">{formatPrice(totalValue)}</span>
-          <span className={`header-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-            {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)} ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
-          </span>
-        </div>
-        <div className="header-controls">
-          {cryptoOffline && (
-            <span className="offline-badge" title="CoinGecko no responde. Reintentando cada 30s.">
-              <span className="offline-dot" />
-              Precios offline
-            </span>
-          )}
-          <span className="blue-rate" title="Dolar blue (venta)">
-            Blue: ${blueLoading ? '...' : blueRate.toLocaleString('es-AR')}
-          </span>
-          <div className="currency-toggle">
-            <button className={currency === 'USD' ? 'active' : ''} onClick={() => setCurrency('USD')}>USD</button>
-            <button className={currency === 'ARS' ? 'active' : ''} onClick={() => setCurrency('ARS')}>ARS</button>
+      <div className="shell">
+        {/* ── Topbar ── */}
+        <div className="topbar">
+          <div className="brand">
+            <div className="brand-mark">&#9670;</div>
+            <div className="brand-name">Ledger</div>
+            <div className="brand-sep">/</div>
+            <div className="brand-sub serif">Personal portfolio</div>
           </div>
-          <button className="refresh-btn" onClick={handleRefresh} title="Actualizar precios">&#8635;</button>
+          <div className="nav">
+            {['dashboard', 'portfolio', 'register', 'charts'].map((tab) => (
+              <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
+                {{ dashboard: 'Dashboard', portfolio: 'Portfolio', register: 'Registrar', charts: 'Gráficos' }[tab]}
+              </button>
+            ))}
+          </div>
+          <div className="topbar-right">
+            {cryptoOffline && (
+              <span className="offline-badge" title="CoinGecko no responde. Reintentando cada 30s.">
+                <span className="offline-dot" />
+                Offline
+              </span>
+            )}
+            <div className="chip" title="Dólar blue (venta)">
+              <span className="dot" />
+              Blue <strong>${blueLoading ? '...' : blueRate.toLocaleString('es-AR')}</strong>
+            </div>
+            <div className="seg">
+              <button className={currency === 'USD' ? 'active' : ''} onClick={() => setCurrency('USD')}>USD</button>
+              <button className={currency === 'ARS' ? 'active' : ''} onClick={() => setCurrency('ARS')}>ARS</button>
+            </div>
+            <button className="icon-btn" onClick={handleRefresh} title="Actualizar precios">&#8635;</button>
+          </div>
         </div>
-      </header>
-
-      {/* ── Tabs ── */}
-      <nav className="tabs">
-        {['dashboard', 'portfolio', 'register', 'charts'].map((tab) => (
-          <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-            {{ dashboard: 'Dashboard', portfolio: 'Portfolio', register: 'Registrar', charts: 'Graficos' }[tab]}
-          </button>
-        ))}
-      </nav>
-
-      {/* ── Content ── */}
-      <main className={`content ${activeTab !== 'register' ? 'wide' : ''}`}>
 
         {/* ════ DASHBOARD ════ */}
         {activeTab === 'dashboard' && (
-          <div className="dashboard">
-            <div className="stat-cards">
-              <div className="stat-card">
-                <span className="stat-label">Valor total</span>
-                <span className="stat-value">{formatPrice(totalValue)}</span>
+          <>
+            {/* Hero */}
+            <div className="hero">
+              <div>
+                <div className="hero-label">
+                  <span className="pill">Patrimonio neto</span>
+                  {!cryptoOffline && <span>· precios en vivo</span>}
+                </div>
+                <div className="hero-value">
+                  <span className="currency">{currency}</span>
+                  <span>{heroWhole}</span>
+                  <span className="cents">,{heroCents}</span>
+                </div>
+                <div className="hero-delta">
+                  <span className={`amt ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                    {totalPnl >= 0 ? '+' : ''}
+                    {convert(totalPnl).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className={`pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                    {totalPnl >= 0 ? '↑' : '↓'} {Math.abs(totalPnlPct).toFixed(2)}%
+                  </span>
+                  <span className="period">· desde el inicio</span>
+                </div>
               </div>
-              <div className="stat-card">
-                <span className="stat-label">Costo total</span>
-                <span className="stat-value">{formatPrice(totalCost)}</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">P&amp;L</span>
-                <span className={`stat-value ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-                  {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
-                  <span className="stat-pct"> ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Evolution chart - prominent */}
-            <div className="dashboard-section chart-hero">
-              <div className="section-header">
-                <h3 className="section-title">Evolucion del portfolio</h3>
-                {Object.keys(historicalPrices).length === 0 && (
-                  <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
-                    {loadingHistorical ? 'Cargando...' : 'Cargar historicos'}
-                  </button>
+              <div className="hero-right">
+                <div className="hero-tagline">
+                  {positions.length} posiciones entre <em>crypto</em> y CEDEARs argentinos.
+                  {topAsset && <> Top activo: <em>{topAsset.name}</em> con {topAssetPct.toFixed(1)}% del portfolio.</>}
+                </div>
+                {filteredEvolutionData.length > 1 && (
+                  <div className="hero-spark">
+                    <ResponsiveContainer width="100%" height={72}>
+                      <AreaChart data={filteredEvolutionData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="heroSpark" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.28} />
+                            <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <Area
+                          type="monotone"
+                          dataKey="valor"
+                          stroke={ACCENT}
+                          strokeWidth={1.5}
+                          fill="url(#heroSpark)"
+                          dot={false}
+                          connectNulls
+                          isAnimationActive={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 )}
               </div>
-              {evolutionData.length > 1 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradInvertido" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#F7931A" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#F7931A" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradValor" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#66BB6A" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#66BB6A" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
-                    <XAxis dataKey="date" stroke="#444" fontSize={11} />
-                    <YAxis stroke="#444" fontSize={11} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Area type="monotone" dataKey="invertido" name="Invertido" stroke="#F7931A" fill="url(#gradInvertido)" strokeWidth={2} strokeDasharray="6 3" />
-                    <Area type="monotone" dataKey="valor" name="Valor actual" stroke="#66BB6A" fill="url(#gradValor)" strokeWidth={2} connectNulls={false} />
-                    <Legend formatter={(value) => <span style={{ color: '#999', fontSize: 12 }}>{value}</span>} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="empty">Registra transacciones para ver la evolucion.</p>
-              )}
             </div>
 
-            {/* Donut + Ranking */}
-            <div className="dashboard-grid">
-              <div className="dashboard-section">
-                <h3 className="section-title">Distribucion por activo</h3>
-                {donutData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value" nameKey="name">
-                        {donutData.map((entry) => (
-                          <Cell key={entry.name} fill={ASSET_COLORS[entry.name] || '#555'} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => `USD ${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                        contentStyle={{ background: '#141414', border: '1px solid #222', borderRadius: 8, color: '#e0e0e0', fontSize: 12 }}
-                      />
-                      <Legend formatter={(value) => <span style={{ color: '#999', fontSize: 12 }}>{value}</span>} />
-                    </PieChart>
+            {/* KPIs */}
+            <div className="kpis">
+              <div className="kpi">
+                <div className="kpi-label">Costo base</div>
+                <div className="kpi-value">{formatPrice(totalCost)}</div>
+                <div className="kpi-sub">Capital invertido</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Ganancia no realizada</div>
+                <div className={`kpi-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                  {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
+                </div>
+                <div className={`kpi-sub ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                  {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total return
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Mejor activo</div>
+                <div className="kpi-value">{bestMover?.ticker || '—'}</div>
+                <div className={`kpi-sub ${bestMover && bestMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                  {bestMover ? `${bestMover.pnlPct >= 0 ? '+' : ''}${bestMover.pnlPct.toFixed(2)}%` : ''}
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Posiciones</div>
+                <div className="kpi-value">{positions.length}</div>
+                <div className="kpi-sub">
+                  {cryptoCount} crypto · {stockCount} cedears
+                </div>
+              </div>
+            </div>
+
+            {/* Evolution chart */}
+            <div className="grid grid-chart">
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">Evolución <span className="serif">· valor vs costo</span></div>
+                    <div className="panel-sub">Valor de mercado versus capital invertido</div>
+                  </div>
+                  <div className="panel-head-right">
+                    <div className="chart-legend">
+                      <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT }} />Valor</div>
+                      <div className="legend-item"><span className="legend-swatch" style={{ background: MUTE }} />Invertido</div>
+                    </div>
+                    <div className="range-selector">
+                      {['1M', '3M', '6M', '1A', 'TODO'].map((f) => (
+                        <button key={f} className={evoFilter === f ? 'active' : ''} onClick={() => setEvoFilter(f)}>{f}</button>
+                      ))}
+                    </div>
+                    {Object.keys(historicalPrices).length === 0 && (
+                      <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
+                        {loadingHistorical ? 'Cargando...' : 'Cargar históricos'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {filteredEvolutionData.length > 1 ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <AreaChart data={filteredEvolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradValor" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
+                          <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
+                      <XAxis dataKey="date" stroke={MUTE} fontSize={11} tickLine={false} axisLine={{ stroke: LINE }} />
+                      <YAxis stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.4} strokeDasharray="4 4" />
+                      <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="url(#gradValor)" strokeWidth={2} connectNulls={false} />
+                    </AreaChart>
                   </ResponsiveContainer>
+                ) : (
+                  <p className="empty">Registrá transacciones para ver la evolución.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Three-column panels: donut, allocation list, movers */}
+            <div className="grid grid-three">
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">Distribución <span className="serif">· donut</span></div>
+                    <div className="panel-sub">Peso sobre el total</div>
+                  </div>
+                </div>
+                {donutData.length > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie
+                          data={donutData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={82}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="name"
+                          labelLine={false}
+                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+                            if (percent < 0.07) return null
+                            const RADIAN = Math.PI / 180
+                            const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN)
+                            return (
+                              <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight={600}>
+                                {(percent * 100).toFixed(0)}%
+                              </text>
+                            )
+                          }}
+                        >
+                          {donutData.map((entry) => (
+                            <Cell key={entry.name} fill={ASSET_COLORS[entry.name] || '#52525B'} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value) => `USD ${Number(value).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                          contentStyle={{ background: '#111114', border: '1px solid #2A2A31', borderRadius: 10, color: '#F4F4F5', fontSize: 12, fontFamily: 'Geist Mono, monospace' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="donut-legend">
+                      {donutData.map((entry) => {
+                        const pct = totalValue > 0 ? (entry.value / totalValue) * 100 : 0
+                        return (
+                          <div key={entry.name} className="donut-legend-item">
+                            <span className="alloc-swatch" style={{ background: ASSET_COLORS[entry.name] || '#52525B' }} />
+                            <span className="alloc-ticker">{entry.name}</span>
+                            <span className="alloc-pct" style={{ marginLeft: 'auto' }}>{pct.toFixed(1)}%</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
                 ) : (
                   <p className="empty">Sin datos</p>
                 )}
               </div>
 
-              <div className="dashboard-section">
-                <h3 className="section-title">Top movers</h3>
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">Allocation <span className="serif">· lista</span></div>
+                    <div className="panel-sub">Valor actual por activo</div>
+                  </div>
+                </div>
+                {donutData.length > 0 ? (
+                  <>
+                    <div className="alloc-bar">
+                      {donutData.map((entry) => (
+                        <div key={entry.name} style={{ background: ASSET_COLORS[entry.name] || '#52525B', flex: entry.value / totalValue }} />
+                      ))}
+                    </div>
+                    <div className="alloc-list">
+                      {donutData.map((entry) => {
+                        const pct = totalValue > 0 ? (entry.value / totalValue) * 100 : 0
+                        return (
+                          <div key={entry.name} className="alloc-row">
+                            <span className="alloc-swatch" style={{ background: ASSET_COLORS[entry.name] || '#52525B' }} />
+                            <span className="alloc-ticker">{entry.name}</span>
+                            <span className="alloc-pct">{pct.toFixed(1)}%</span>
+                            <span className="alloc-val">${entry.value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="empty">Sin posiciones</p>
+                )}
+              </div>
+
+              <div className="panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">Top movers <span className="serif">· retorno total</span></div>
+                    <div className="panel-sub">Desde la compra</div>
+                  </div>
+                </div>
                 {ranked.length > 0 ? (
                   <div className="ranking-list">
-                    {ranked.map((p, i) => (
-                      <div key={p.ticker} className="ranking-item">
-                        <span className="ranking-pos">#{i + 1}</span>
-                        <span className="ranking-ticker" style={{ color: ASSET_COLORS[p.ticker] || '#fff' }}>{p.ticker}</span>
-                        <span className={`ranking-badge type-${p.assetType}`}>{TYPE_LABELS[p.assetType]}</span>
-                        <span className={`ranking-pnl ${p.pnlPct >= 0 ? 'positive' : 'negative'}`}>
-                          {p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(2)}%
-                        </span>
-                      </div>
-                    ))}
+                    {ranked.map((p) => {
+                      const posValue = p.currentPrice * p.quantity
+                      const weight = totalValue > 0 ? (posValue / totalValue) * 100 : 0
+                      return (
+                        <div key={p.ticker} className="ranking-item">
+                          <div className="mover-logo" style={{ background: ASSET_COLORS[p.ticker] || '#2A2A31' }}>
+                            {p.ticker.slice(0, 3)}
+                          </div>
+                          <div className="mover-body">
+                            <div className="mover-header">
+                              <span className="mover-ticker">{p.ticker}</span>
+                              <span className={`ranking-badge type-${p.assetType}`}>{TYPE_LABELS[p.assetType]}</span>
+                            </div>
+                            <div className="mover-sub">{formatPrice(posValue)} · {weight.toFixed(1)}%</div>
+                          </div>
+                          <div className="mover-side">
+                            <span className={`mover-pct ${p.pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                              {p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(2)}%
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="empty">Sin posiciones</p>
                 )}
               </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* ════ PORTFOLIO ════ */}
         {activeTab === 'portfolio' && (
-          <div className="portfolio">
+          <>
+            <div className="page-head">
+              <div>
+                <div className="page-eyebrow">Posiciones</div>
+                <h1 className="page-title">Portfolio detallado</h1>
+              </div>
+            </div>
+            <div className="portfolio">
             {positions.length === 0 ? (
-              <p className="empty">No hay posiciones. Registra una transaccion para comenzar.</p>
+              <p className="empty">No hay posiciones. Registrá una transacción para comenzar.</p>
             ) : (
               <>
                 {groups.map((g) => {
@@ -836,121 +1034,155 @@ function App() {
                   )
                 })}
                 <div className="portfolio-grand-total">
-                  <span>TOTAL</span>
+                  <span>Total del portfolio</span>
                   <span className="grand-total-value">{formatPrice(totalValue)}</span>
                   <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-                    {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)} ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
+                    {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)} · {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
                   </span>
                 </div>
               </>
             )}
-          </div>
+            </div>
+          </>
         )}
 
         {/* ════ REGISTRO ════ */}
         {activeTab === 'register' && (
-          <form className="register-form" onSubmit={handleSubmit}>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="ticker">Ticker</label>
-                <input id="ticker" type="text" value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="BTC, ETH, META..." required />
-              </div>
-              <div className="form-group">
-                <label htmlFor="assetType">Tipo de activo</label>
-                <select id="assetType" value={assetType} onChange={(e) => setAssetType(e.target.value)}>
-                  <option value="crypto">Crypto</option>
-                  <option value="cedear">CEDEAR</option>
-                  <option value="accion">Accion</option>
-                  <option value="bono">Bono</option>
-                  <option value="fci">FCI</option>
-                </select>
+          <>
+            <div className="page-head">
+              <div>
+                <div className="page-eyebrow">Nueva operación</div>
+                <h1 className="page-title">Registrar transacción</h1>
               </div>
             </div>
-            <div className="form-group">
-              <label>Operacion</label>
-              <div className="operation-toggle">
-                <button type="button" className={operation === 'buy' ? 'active buy' : ''} onClick={() => setOperation('buy')}>Compra</button>
-                <button type="button" className={operation === 'sell' ? 'active sell' : ''} onClick={() => setOperation('sell')}>Venta</button>
+            <form className="register-form" onSubmit={handleSubmit}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="ticker">Ticker</label>
+                  <input id="ticker" type="text" value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="BTC, ETH, META..." required />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="assetType">Tipo de activo</label>
+                  <select id="assetType" value={assetType} onChange={(e) => setAssetType(e.target.value)}>
+                    <option value="crypto">Crypto</option>
+                    <option value="cedear">CEDEAR</option>
+                    <option value="accion">Acción</option>
+                    <option value="bono">Bono</option>
+                    <option value="fci">FCI</option>
+                  </select>
+                </div>
               </div>
-            </div>
-            <div className="form-row">
               <div className="form-group">
-                <label htmlFor="quantity">Cantidad</label>
-                <input id="quantity" type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" required />
+                <label>Operación</label>
+                <div className="operation-toggle">
+                  <button type="button" className={operation === 'buy' ? 'active buy' : ''} onClick={() => setOperation('buy')}>Compra</button>
+                  <button type="button" className={operation === 'sell' ? 'active sell' : ''} onClick={() => setOperation('sell')}>Venta</button>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="quantity">Cantidad</label>
+                  <input id="quantity" type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" required />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="unitPrice">Precio unitario (USD)</label>
+                  <input id="unitPrice" type="number" step="any" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" required />
+                </div>
               </div>
               <div className="form-group">
-                <label htmlFor="unitPrice">Precio unitario (USD)</label>
-                <input id="unitPrice" type="number" step="any" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" required />
+                <label htmlFor="txDate">Fecha</label>
+                <input id="txDate" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} required />
               </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="txDate">Fecha</label>
-              <input id="txDate" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} required />
-            </div>
-            <button type="submit" className="submit-btn">Registrar transaccion</button>
-          </form>
+              <button type="submit" className="submit-btn">Registrar transacción →</button>
+            </form>
+          </>
         )}
 
         {/* ════ GRAFICOS ════ */}
         {activeTab === 'charts' && (
-          <div className="charts-tab">
-            <div className="chart-section">
-              <div className="section-header">
-                <h3 className="section-title">Evolucion del portfolio</h3>
-                {Object.keys(historicalPrices).length === 0 && (
-                  <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
-                    {loadingHistorical ? 'Cargando...' : 'Cargar historicos'}
-                  </button>
+          <>
+            <div className="page-head">
+              <div>
+                <div className="page-eyebrow">Analítica</div>
+                <h1 className="page-title">Gráficos</h1>
+              </div>
+            </div>
+            <div className="charts-tab">
+              <div className="chart-section">
+                <div className="section-header">
+                  <div>
+                    <h3 className="section-title">Evolución del portfolio</h3>
+                    <div className="panel-sub">Valor total y costo invertido a lo largo del tiempo</div>
+                  </div>
+                  <div className="section-header-right">
+                    <div className="chart-legend">
+                      <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT }} />Valor</div>
+                      <div className="legend-item"><span className="legend-swatch" style={{ background: MUTE }} />Invertido</div>
+                    </div>
+                    <div className="evo-filters">
+                      {['1M', '3M', '6M', '1A', 'TODO'].map((f) => (
+                        <button key={f} className={`evo-filter-btn${evoFilter === f ? ' active' : ''}`} onClick={() => setEvoFilter(f)}>{f}</button>
+                      ))}
+                    </div>
+                    {Object.keys(historicalPrices).length === 0 && (
+                      <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
+                        {loadingHistorical ? 'Cargando...' : 'Cargar históricos'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {filteredEvolutionData.length > 1 ? (
+                  <ResponsiveContainer width="100%" height={380}>
+                    <AreaChart data={filteredEvolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gradVal2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
+                          <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
+                      <XAxis dataKey="date" stroke={MUTE} fontSize={11} tickLine={false} axisLine={{ stroke: LINE }} />
+                      <YAxis stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.4} strokeDasharray="4 4" />
+                      <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="url(#gradVal2)" strokeWidth={2} connectNulls={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="empty">Registrá transacciones para ver la evolución.</p>
                 )}
               </div>
-              {evolutionData.length > 1 ? (
-                <ResponsiveContainer width="100%" height={380}>
-                  <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradInv2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#F7931A" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#F7931A" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradVal2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#66BB6A" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#66BB6A" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" />
-                    <XAxis dataKey="date" stroke="#444" fontSize={11} />
-                    <YAxis stroke="#444" fontSize={11} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Area type="monotone" dataKey="invertido" name="Invertido" stroke="#F7931A" fill="url(#gradInv2)" strokeWidth={2} strokeDasharray="6 3" />
-                    <Area type="monotone" dataKey="valor" name="Valor actual" stroke="#66BB6A" fill="url(#gradVal2)" strokeWidth={2} connectNulls={false} />
-                    <Legend formatter={(value) => <span style={{ color: '#999', fontSize: 12 }}>{value}</span>} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="empty">Registra transacciones para ver la evolucion.</p>
-              )}
-            </div>
 
-            <div className="chart-section">
-              <h3 className="section-title">Valor vs Costo por activo</h3>
-              {barData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={Math.max(260, barData.length * 52)}>
-                  <BarChart data={barData} layout="vertical" margin={{ top: 10, right: 80, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" horizontal={false} />
-                    <YAxis type="category" dataKey="ticker" stroke="#888" fontSize={12} width={50} />
-                    <XAxis type="number" stroke="#444" fontSize={11} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v}`} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Legend formatter={(value) => <span style={{ color: '#999', fontSize: 12 }}>{value}</span>} />
-                    <Bar dataKey="Costo" fill="#333" radius={[0, 4, 4, 0]} barSize={16} />
-                    <Bar dataKey="Valor" fill="#00A3E0" radius={[0, 4, 4, 0]} barSize={16} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="empty">Sin datos para graficar.</p>
-              )}
+              <div className="chart-section">
+                <div className="section-header">
+                  <div>
+                    <h3 className="section-title">Valor vs costo <span className="serif">· por activo</span></h3>
+                    <div className="panel-sub">Comparación de capital invertido y valor de mercado</div>
+                  </div>
+                  <div className="chart-legend">
+                    <div className="legend-item"><span className="legend-swatch" style={{ background: '#2A2A31', height: 8 }} />Costo</div>
+                    <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT, height: 8 }} />Valor</div>
+                  </div>
+                </div>
+                {barData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={Math.max(260, barData.length * 56)}>
+                    <BarChart data={barData} layout="vertical" margin={{ top: 10, right: 80, left: 10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} horizontal={false} />
+                      <YAxis type="category" dataKey="ticker" stroke={MUTE} fontSize={12} width={60} tickLine={false} axisLine={false} />
+                      <XAxis type="number" stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v}`} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="Costo" fill="#2A2A31" radius={[0, 5, 5, 0]} barSize={18} />
+                      <Bar dataKey="Valor" fill={ACCENT} radius={[0, 5, 5, 0]} barSize={18} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="empty">Sin datos para graficar.</p>
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
-      </main>
+      </div>
 
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
