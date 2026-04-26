@@ -27,7 +27,9 @@ body { min-height: 100vh; }
   font-family: 'Geist', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
+button { -webkit-tap-highlight-color: transparent; }
 
 .mono { font-family: 'Geist Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .serif { font-family: 'Instrument Serif', serif; font-weight: 400; font-style: italic; color: var(--text-dim); }
@@ -731,6 +733,7 @@ body { min-height: 100vh; }
 @media (max-width: 1024px) {
   .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 36px; }
   .hero-right { padding-bottom: 0; }
+  .shell { padding: 0 28px 50px; }
 }
 
 @media (max-width: 900px) {
@@ -742,24 +745,143 @@ body { min-height: 100vh; }
   .kpi:nth-child(4) { border-top: 1px solid var(--line); }
 }
 
+/* Tablet / phones grandes */
 @media (max-width: 768px) {
-  .shell { padding: 0 20px 40px; }
-  .topbar { padding: 14px 0; gap: 12px; }
-  .nav { order: 3; width: 100%; overflow-x: auto; }
-  .hero-value { font-size: 56px; }
-  .hero-value .currency { font-size: 18px; transform: translateY(-14px); }
-  .hero-value .cents { font-size: 28px; }
-  .page-title { font-size: 24px; }
+  .shell { padding: 0 16px 40px; }
+
+  /* Topbar: brand + segmented controls compactos, nav abajo full-width scrollable */
+  .topbar {
+    padding: 12px 0;
+    gap: 10px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand actions"
+      "nav nav";
+  }
+  .brand { grid-area: brand; gap: 8px; }
+  .brand-sep, .brand-sub { display: none; }
+  .topbar-right { grid-area: actions; gap: 6px; }
+  .nav {
+    grid-area: nav;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav button { flex: 1; min-width: max-content; padding: 8px 12px; font-size: 13px; }
+  .chip { padding: 6px 10px; font-size: 12px; }
+  .seg button { padding: 6px 10px; font-size: 12px; }
+  .icon-btn { width: 36px; height: 36px; }
+
+  /* Hero */
+  .hero { padding: 28px 0 24px; gap: 20px; }
+  .hero-value { font-size: 52px; gap: 8px; }
+  .hero-value .currency { font-size: 16px; transform: translateY(-12px); }
+  .hero-value .cents { font-size: 26px; }
+  .hero-tagline { font-size: 14px; }
+  .hero-tagline em { font-size: 16px; }
+
+  /* Page heads */
+  .page-head { padding: 28px 0 4px; }
+  .page-title { font-size: 26px; }
+
+  /* Paneles más compactos */
+  .panel { padding: 18px; border-radius: 14px; }
+  .panel-head { margin-bottom: 16px; gap: 12px; }
+  .panel-head-right { gap: 10px; width: 100%; }
+  .grid { gap: 16px; margin-top: 20px; }
+
+  /* Charts tab */
+  .chart-section { padding: 18px; border-radius: 14px; }
+  .charts-tab { gap: 16px; margin-top: 20px; }
+  .section-header { margin-bottom: 16px; }
+  .section-header-right { width: 100%; }
+
+  /* Tablas compactas */
+  .group-title { padding: 14px 16px; font-size: 13.5px; }
+  .ptable { font-size: 12px; }
+  .ptable thead th, .ptable tbody td { padding: 10px 10px; }
+  .row-delete { opacity: 1; }
+
+  /* Grand total */
+  .portfolio-grand-total { padding: 16px 18px; }
+  .grand-total-value { font-size: 20px; }
+  .grand-total-pnl { font-size: 13px; }
+
+  /* Donut legend */
+  .donut-legend { grid-template-columns: 1fr; gap: 4px 12px; }
 }
 
+/* Phones */
 @media (max-width: 600px) {
+  .shell { padding: 0 12px 32px; }
+
   .kpis { grid-template-columns: 1fr; }
-  .kpi { border-right: 0; border-bottom: 1px solid var(--line); padding: 16px 0; }
+  .kpi { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 0; }
+  .kpi:nth-child(3) { border-top: 0; }
+  .kpi:nth-child(4) { border-top: 0; }
   .kpi:last-child { border-bottom: 0; }
-  .form-row { flex-direction: column; gap: 20px; }
-  .hero-value { font-size: 44px; }
-  .hero-value .currency { font-size: 16px; transform: translateY(-10px); }
+  .kpi-value { font-size: 22px; }
+
+  .form-row { flex-direction: column; gap: 16px; }
+  .register-form { padding: 20px; }
+
+  /* Hero más chico todavía */
+  .hero { padding: 20px 0 18px; }
+  .hero-value { font-size: 42px; gap: 6px; }
+  .hero-value .currency { font-size: 14px; transform: translateY(-9px); }
   .hero-value .cents { font-size: 22px; }
-  .ptable { font-size: 12px; }
-  .ptable thead th, .ptable tbody td { padding: 10px 8px; }
+  .hero-delta { gap: 10px; font-size: 13px; margin-top: 14px; }
+  .hero-label { margin-bottom: 16px; font-size: 11px; }
+
+  /* Paneles aún más finitos */
+  .panel { padding: 14px; border-radius: 12px; }
+  .panel-title { font-size: 13.5px; }
+  .panel-sub { font-size: 12px; }
+  .chart-section { padding: 14px; }
+  .page-title { font-size: 22px; }
+
+  /* Topbar muy compacto: ocultar el chip del dolar para ahorrar espacio */
+  .chip { display: none; }
+  .nav button { padding: 7px 10px; font-size: 12.5px; }
+  .seg button { padding: 5px 9px; font-size: 11.5px; }
+  .icon-btn { width: 34px; height: 34px; font-size: 13px; }
+
+  /* Tablas: más densas */
+  .ptable { font-size: 11.5px; }
+  .ptable thead th { padding: 9px 8px; font-size: 10px; }
+  .ptable tbody td { padding: 10px 8px; }
+  .group-title { padding: 12px 14px; }
+
+  /* Ranking items y allocation list */
+  .ranking-item { grid-template-columns: 32px 1fr auto; gap: 10px; padding: 10px 0; }
+  .mover-logo { width: 32px; height: 32px; font-size: 11px; }
+  .mover-ticker { font-size: 13px; }
+  .mover-sub { font-size: 11.5px; }
+  .alloc-row { grid-template-columns: 16px 1fr auto auto; gap: 10px; }
+  .alloc-val { min-width: 70px; font-size: 12px; }
+  .alloc-pct { min-width: 44px; font-size: 12px; }
+
+  /* Form inputs touch-friendly (font 16px evita zoom-on-focus en iOS) */
+  .form-group input,
+  .form-group select { padding: 12px 13px; font-size: 16px; }
+  .operation-toggle button { padding: 13px; font-size: 14px; }
+  .submit-btn { padding: 14px 18px; font-size: 15px; }
+
+  /* Toast no chocar con el fondo */
+  .toast { left: 16px; right: 16px; transform: none; bottom: 16px; text-align: center; }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* Phones chiquitos */
+@media (max-width: 380px) {
+  .hero-value { font-size: 36px; }
+  .hero-value .cents { font-size: 18px; }
+  .brand-name { font-size: 13px; }
+  .nav button { padding: 7px 8px; font-size: 12px; }
 }
