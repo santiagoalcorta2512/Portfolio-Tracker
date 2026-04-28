@@ -955,12 +955,28 @@ function App() {
 
                   return (
                     <div key={g.type} className="portfolio-group">
-                      <h3 className="group-title" style={{ borderLeftColor: TYPE_BORDER[g.type] }}>{g.label}</h3>
+                      <div className="group-title" style={{ borderLeftColor: TYPE_BORDER[g.type] }}>
+                        <span className="group-title-label">{g.label}</span>
+                        <span className="group-title-meta">
+                          {g.positions.length} {g.positions.length === 1 ? 'posición' : 'posiciones'}
+                        </span>
+                      </div>
                       <div className="ptable-wrap">
                         <table className="ptable">
+                          <colgroup>
+                            <col style={{ width: '16%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '14%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '8%' }} />
+                            <col style={{ width: '44px' }} />
+                          </colgroup>
                           <thead>
                             <tr>
-                              <th className="col-ticker">Activo</th>
+                              <th className="col-text">Activo</th>
                               <th className="col-num">Cantidad</th>
                               <th className="col-num">Precio</th>
                               <th className="col-num">Valor</th>
@@ -982,7 +998,7 @@ function App() {
                               const weight = totalValue > 0 ? (value / totalValue) * 100 : 0
 
                               return (
-                                <tr key={p.ticker} style={{ borderLeftColor: TYPE_BORDER[g.type] }}>
+                                <tr key={p.ticker}>
                                   <td className="cell-ticker">
                                     <span className="ticker-name" style={{ color: ASSET_COLORS[p.ticker] || '#fff' }}>{p.ticker}</span>
                                   </td>
@@ -996,10 +1012,12 @@ function App() {
                                   <td className={`col-num ${pnl >= 0 ? 'positive' : 'negative'}`}>
                                     {pnl >= 0 ? '+' : ''}{formatPrice(pnl)}
                                   </td>
-                                  <td className={`col-num ${pnlPct >= 0 ? 'positive' : 'negative'}`}>
-                                    {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                                  <td className="col-num">
+                                    <span className={`pnl-pct ${pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                                      {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                                    </span>
                                   </td>
-                                  <td className="col-num">{weight.toFixed(1)}%</td>
+                                  <td className="col-num dim">{weight.toFixed(1)}%</td>
                                   <td className="col-act">
                                     <button
                                       className="row-delete"
@@ -1013,18 +1031,18 @@ function App() {
                           </tbody>
                           <tfoot>
                             <tr className="subtotal-row">
-                              <td>Subtotal</td>
-                              <td></td>
-                              <td></td>
+                              <td className="subtotal-label" colSpan={3}>Subtotal · {g.label}</td>
                               <td className="col-num">{formatPrice(g.value)}</td>
                               <td className="col-num dim">{formatPrice(g.cost)}</td>
                               <td className={`col-num ${gPnl >= 0 ? 'positive' : 'negative'}`}>
                                 {gPnl >= 0 ? '+' : ''}{formatPrice(gPnl)}
                               </td>
-                              <td className={`col-num ${gPnlPct >= 0 ? 'positive' : 'negative'}`}>
-                                {gPnlPct >= 0 ? '+' : ''}{gPnlPct.toFixed(2)}%
+                              <td className="col-num">
+                                <span className={`pnl-pct ${gPnlPct >= 0 ? 'pos' : 'neg'}`}>
+                                  {gPnlPct >= 0 ? '+' : ''}{gPnlPct.toFixed(2)}%
+                                </span>
                               </td>
-                              <td className="col-num">{gWeight.toFixed(1)}%</td>
+                              <td className="col-num dim">{gWeight.toFixed(1)}%</td>
                               <td></td>
                             </tr>
                           </tfoot>
@@ -1034,11 +1052,21 @@ function App() {
                   )
                 })}
                 <div className="portfolio-grand-total">
-                  <span>Total del portfolio</span>
-                  <span className="grand-total-value">{formatPrice(totalValue)}</span>
-                  <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-                    {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)} · {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
-                  </span>
+                  <div className="grand-total-label">
+                    <span className="grand-eyebrow">Total del portfolio</span>
+                    <span className="grand-meta">
+                      {positions.length} posiciones · costo {formatPrice(totalCost)}
+                    </span>
+                  </div>
+                  <div className="grand-total-numbers">
+                    <span className="grand-total-value">{formatPrice(totalValue)}</span>
+                    <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
+                      {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
+                    </span>
+                    <span className={`pnl-pct grand-total-pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                      {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+                    </span>
+                  </div>
                 </div>
               </>
             )}

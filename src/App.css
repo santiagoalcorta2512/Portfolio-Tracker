@@ -446,57 +446,88 @@ button { -webkit-tap-highlight-color: transparent; }
 .dim { color: var(--text-dim); }
 
 /* ── Portfolio ── */
-.portfolio { margin-top: 28px; display: flex; flex-direction: column; gap: 14px; }
+.portfolio { margin-top: 28px; display: flex; flex-direction: column; gap: 18px; }
 
 .portfolio-group {
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow: hidden;
   background: var(--bg-card);
 }
+
 .group-title {
-  font-size: 14px; font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'Geist', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
-  letter-spacing: -0.005em;
-  padding: 16px 22px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 14px 22px;
   margin: 0;
   border-left: 3px solid var(--accent);
-  background: var(--bg-card);
-}
-.ptable-wrap { overflow-x: auto; border-top: 1px solid var(--line); }
-.ptable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.ptable thead th {
-  font-family: 'Geist', sans-serif;
-  font-size: 10.5px; font-weight: 500;
-  color: var(--text-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 12px 14px;
-  text-align: right;
   border-bottom: 1px solid var(--line);
-  background: rgba(0,0,0,.18);
-  white-space: nowrap;
+  border-radius: 14px 14px 0 0;
+  background: rgba(255, 255, 255, 0.02);
 }
-.ptable thead th.col-ticker { text-align: left; }
-.ptable thead th.col-act { width: 40px; }
-
-.ptable tbody tr { transition: background .1s; }
-.ptable tbody tr:hover { background: var(--bg-hover); }
-
-.ptable tbody td {
-  padding: 14px;
-  text-align: right;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
+.group-title-meta {
   font-family: 'Geist Mono', monospace;
   font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+/* No overflow on desktop so the sticky thead works against page scroll */
+.ptable-wrap { }
+
+.ptable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.ptable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-family: 'Geist', sans-serif;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-strong);
+  background: #16161B;
+  white-space: nowrap;
+  text-align: right;
+}
+.ptable thead th.col-text { text-align: left; }
+.ptable thead th.col-act { padding: 0; }
+
+.ptable tbody td {
+  padding: 13px 14px;
+  font-family: 'Geist Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
   color: var(--text);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  text-align: right;
+  background: transparent;
+  transition: background .12s;
 }
 .ptable tbody td.dim { color: var(--text-mute); }
+.ptable tbody td.col-text { text-align: left; }
+.ptable tbody td.col-act { padding: 0; text-align: center; }
+.ptable tbody td.positive { color: var(--pos); font-weight: 500; }
+.ptable tbody td.negative { color: var(--neg); font-weight: 500; }
 
 .cell-ticker {
   text-align: left !important;
@@ -514,7 +545,33 @@ button { -webkit-tap-highlight-color: transparent; }
   font-size: 11px;
 }
 
-.col-num { font-variant-numeric: tabular-nums; }
+.col-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Zebra striping (subtle) */
+.ptable tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.014);
+}
+.ptable tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* P&L percentage badge (used for both row and subtotal pct) */
+.pnl-pct {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: 'Geist Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: -0.005em;
+  line-height: 1.4;
+}
+.pnl-pct.pos { background: rgba(74, 222, 128, 0.12); color: var(--pos); }
+.pnl-pct.neg { background: rgba(248, 113, 113, 0.12); color: var(--neg); }
 
 .row-delete {
   background: transparent; border: 0;
@@ -531,42 +588,89 @@ button { -webkit-tap-highlight-color: transparent; }
   color: var(--neg);
 }
 
-.subtotal-row td {
-  padding: 12px 14px;
+/* Subtotal row */
+.ptable tfoot .subtotal-row td {
+  padding: 14px;
+  font-family: 'Geist Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.025);
   border-top: 1px solid var(--line-strong);
   border-bottom: none;
+  text-align: right;
+}
+.ptable tfoot .subtotal-row td.positive { color: var(--pos); }
+.ptable tfoot .subtotal-row td.negative { color: var(--neg); }
+.ptable tfoot .subtotal-row td.dim { color: var(--text-dim); }
+.ptable tfoot .subtotal-row td.subtotal-label {
+  text-align: left;
+  font-family: 'Geist', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--text-dim);
-  font-size: 12px;
-  background: rgba(0,0,0,.18);
+  color: var(--text-mute);
 }
 
+/* Grand total */
 .portfolio-grand-total {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  margin-top: 20px;
-  background: var(--bg-elev);
-  flex-wrap: wrap; gap: 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px 32px;
+  align-items: center;
+  padding: 24px 28px;
+  border: 1px solid rgba(124, 155, 255, 0.32);
+  background: linear-gradient(180deg, rgba(124, 155, 255, 0.07), rgba(124, 155, 255, 0.02));
+  border-radius: 16px;
+  margin-top: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
-.portfolio-grand-total > span:first-child {
-  font-size: 11.5px; font-weight: 500;
-  color: var(--text-mute);
-  letter-spacing: 0.1em;
+.grand-total-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grand-eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--text-mute);
+}
+.grand-meta {
+  font-family: 'Geist Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.grand-total-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .grand-total-value {
   font-family: 'Geist Mono', monospace;
   font-variant-numeric: tabular-nums;
-  font-size: 22px; font-weight: 500;
+  font-size: 28px;
+  font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--text);
 }
 .grand-total-pnl {
   font-family: 'Geist Mono', monospace;
   font-variant-numeric: tabular-nums;
-  font-size: 14px; font-weight: 500;
+  font-size: 17px;
+  font-weight: 500;
+}
+.grand-total-pnl.positive { color: var(--pos); }
+.grand-total-pnl.negative { color: var(--neg); }
+.grand-total-pct {
+  font-size: 13px;
+  padding: 5px 10px;
 }
 
 /* ── Charts tab ── */
@@ -799,16 +903,38 @@ button { -webkit-tap-highlight-color: transparent; }
   .section-header { margin-bottom: 16px; }
   .section-header-right { width: 100%; }
 
-  /* Tablas compactas */
-  .group-title { padding: 14px 16px; font-size: 13.5px; }
-  .ptable { font-size: 12px; }
-  .ptable thead th, .ptable tbody td { padding: 10px 10px; }
+  /* Tablas compactas: en mobile habilitamos scroll horizontal y desactivamos sticky */
+  .ptable-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ptable {
+    table-layout: auto;
+    min-width: 760px;
+    font-size: 12px;
+  }
+  .ptable thead th {
+    position: static;
+    padding: 10px;
+    font-size: 10px;
+  }
+  .ptable tbody td { padding: 11px 10px; }
+  .ptable tfoot .subtotal-row td { padding: 11px 10px; }
+  .group-title { padding: 12px 16px; font-size: 11.5px; }
+  .group-title-meta { font-size: 10.5px; }
   .row-delete { opacity: 1; }
+  .pnl-pct { padding: 2px 6px; font-size: 11px; }
 
   /* Grand total */
-  .portfolio-grand-total { padding: 16px 18px; }
-  .grand-total-value { font-size: 20px; }
-  .grand-total-pnl { font-size: 13px; }
+  .portfolio-grand-total {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 18px 20px;
+  }
+  .grand-total-numbers { justify-content: flex-start; gap: 14px; }
+  .grand-total-value { font-size: 24px; }
+  .grand-total-pnl { font-size: 15px; }
+  .grand-total-pct { font-size: 12.5px; }
 
   /* Donut legend */
   .donut-legend { grid-template-columns: 1fr; gap: 4px 12px; }
@@ -850,10 +976,12 @@ button { -webkit-tap-highlight-color: transparent; }
   .icon-btn { width: 34px; height: 34px; font-size: 13px; }
 
   /* Tablas: más densas */
-  .ptable { font-size: 11.5px; }
+  .ptable { font-size: 11.5px; min-width: 720px; }
   .ptable thead th { padding: 9px 8px; font-size: 10px; }
   .ptable tbody td { padding: 10px 8px; }
+  .ptable tfoot .subtotal-row td { padding: 10px 8px; font-size: 11.5px; }
   .group-title { padding: 12px 14px; }
+  .pnl-pct { padding: 2px 5px; font-size: 10.5px; }
 
   /* Ranking items y allocation list */
   .ranking-item { grid-template-columns: 32px 1fr auto; gap: 10px; padding: 10px 0; }
