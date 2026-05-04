@@ -19,6 +19,19 @@ app.get('/api/dolar', async (_req, res) => {
   }
 })
 
+// ── Dolar CCL (contado con liqui) ──
+app.get('/api/ccl', async (_req, res) => {
+  try {
+    const response = await fetch('https://dolarapi.com/v1/dolares/contadoconliqui')
+    if (!response.ok) throw new Error(`dolarapi ${response.status}`)
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    console.error('[ccl]', err.message)
+    res.status(502).json({ error: 'Failed to fetch dolar CCL' })
+  }
+})
+
 // ── Crypto prices (CoinGecko) ──
 app.get('/api/crypto', async (req, res) => {
   const ids = req.query.ids

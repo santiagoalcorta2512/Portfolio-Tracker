@@ -96,6 +96,7 @@ button { -webkit-tap-highlight-color: transparent; }
   background: var(--pos); box-shadow: 0 0 8px rgba(74,222,128,.6);
 }
 .chip strong { color: var(--text); font-weight: 500; }
+.chip-sep { color: var(--text-mute); margin: 0 2px; }
 
 .seg {
   display: inline-flex;

@@ -19,6 +19,7 @@ import './App.css'
 // ── Constants ──
 
 const BLUE_FALLBACK = 1200
+const CCL_FALLBACK = 1300
 const API_BASE = '/api'
 
 const CRYPTO_MAP = {
@@ -301,6 +302,8 @@ function App() {
   const [currency, setCurrency] = useState('USD')
   const [blueRate, setBlueRate] = useState(BLUE_FALLBACK)
   const [blueLoading, setBlueLoading] = useState(true)
+  const [cclRate, setCclRate] = useState(CCL_FALLBACK)
+  const [cclLoading, setCclLoading] = useState(true)
   const [cryptoPrices, setCryptoPrices] = useState({})
   const [stockPrices, setStockPrices] = useState({})
   const [historicalPrices, setHistoricalPrices] = useState(() => getCachedHistorical() || {})
@@ -336,11 +339,29 @@ function App() {
     }
   }, [])
 
+  // ── Dolar CCL ──
+  const fetchCclRate = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/ccl`)
+      if (!res.ok) throw new Error('API error')
+      const data = await res.json()
+      if (data.venta) setCclRate(data.venta)
+    } catch {
+      // keep fallback
+    } finally {
+      setCclLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     fetchBlueRate()
-    const interval = setInterval(fetchBlueRate, 60000)
+    fetchCclRate()
+    const interval = setInterval(() => {
+      fetchBlueRate()
+      fetchCclRate()
+    }, 60000)
     return () => clearInterval(interval)
-  }, [fetchBlueRate])
+  }, [fetchBlueRate, fetchCclRate])
 
   // ── Crypto prices ──
   const transactionsRef = useRef(transactions)
@@ -509,10 +530,11 @@ function App() {
   }
 
   // ── Currency ──
-  const convert = (usdValue) => (currency === 'ARS' ? usdValue * blueRate : usdValue)
-  const formatPrice = (value) => {
+  const rateFor = (type) => (type === 'cedear' || type === 'accion' ? cclRate : blueRate)
+  const convert = (usdValue, type) => (currency === 'ARS' ? usdValue * rateFor(type) : usdValue)
+  const formatPrice = (value, type) => {
     const prefix = currency === 'ARS' ? 'ARS ' : 'USD '
-    return prefix + convert(value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return prefix + convert(value, type).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
   // ── Submit ──
@@ -520,7 +542,8 @@ function App() {
     e.preventDefault()
     if (!ticker || !quantity || !unitPrice) return
     const rawPrice = parseFloat(unitPrice)
-    const usdPrice = priceCurrency === 'ARS' ? rawPrice / blueRate : rawPrice
+    const formRate = rateFor(assetType)
+    const usdPrice = priceCurrency === 'ARS' ? rawPrice / formRate : rawPrice
     const tx = {
       id: Date.now(),
       ticker: ticker.toUpperCase(),
@@ -655,9 +678,11 @@ function App() {
                 Offline
               </span>
             )}
-            <div className="chip" title="Dólar blue (venta)">
+            <div className="chip" title="Blue (crypto / general) · CCL (CEDEARs)">
               <span className="dot" />
               Blue <strong>${blueLoading ? '...' : blueRate.toLocaleString('es-AR')}</strong>
+              <span className="chip-sep">·</span>
+              CCL <strong>${cclLoading ? '...' : cclRate.toLocaleString('es-AR')}</strong>
             </div>
             <div className="seg">
               <button className={currency === 'USD' ? 'active' : ''} onClick={() => setCurrency('USD')}>USD</button>
@@ -924,7 +949,7 @@ function App() {
                               <span className="mover-ticker">{p.ticker}</span>
                               <span className={`ranking-badge type-${p.assetType}`}>{TYPE_LABELS[p.assetType]}</span>
                             </div>
-                            <div className="mover-sub">{formatPrice(posValue)} · {weight.toFixed(1)}%</div>
+                            <div className="mover-sub">{formatPrice(posValue, p.assetType)} · {weight.toFixed(1)}%</div>
                           </div>
                           <div className="mover-side">
                             <span className={`mover-pct ${p.pnlPct >= 0 ? 'pos' : 'neg'}`}>
@@ -1013,13 +1038,13 @@ function App() {
                                   </td>
                                   <td className="col-num">{p.quantity.toLocaleString('es-AR', { maximumFractionDigits: 8 })}</td>
                                   <td className="col-num">
-                                    {formatPrice(price)}
+                                    {formatPrice(price, p.assetType)}
                                     {!hasRealPrice && <span className="estimated-icon" title="Precio promedio de compra"> ~</span>}
                                   </td>
-                                  <td className="col-num">{formatPrice(value)}</td>
-                                  <td className="col-num dim">{formatPrice(cost)}</td>
+                                  <td className="col-num">{formatPrice(value, p.assetType)}</td>
+                                  <td className="col-num dim">{formatPrice(cost, p.assetType)}</td>
                                   <td className={`col-num ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                                    {pnl >= 0 ? '+' : ''}{formatPrice(pnl)}
+                                    {pnl >= 0 ? '+' : ''}{formatPrice(pnl, p.assetType)}
                                   </td>
                                   <td className="col-num">
                                     <span className={`pnl-pct ${pnlPct >= 0 ? 'pos' : 'neg'}`}>
@@ -1041,10 +1066,10 @@ function App() {
                           <tfoot>
                             <tr className="subtotal-row">
                               <td className="subtotal-label" colSpan={3}>Subtotal · {g.label}</td>
-                              <td className="col-num">{formatPrice(g.value)}</td>
-                              <td className="col-num dim">{formatPrice(g.cost)}</td>
+                              <td className="col-num">{formatPrice(g.value, g.type)}</td>
+                              <td className="col-num dim">{formatPrice(g.cost, g.type)}</td>
                               <td className={`col-num ${gPnl >= 0 ? 'positive' : 'negative'}`}>
-                                {gPnl >= 0 ? '+' : ''}{formatPrice(gPnl)}
+                                {gPnl >= 0 ? '+' : ''}{formatPrice(gPnl, g.type)}
                               </td>
                               <td className="col-num">
                                 <span className={`pnl-pct ${gPnlPct >= 0 ? 'pos' : 'neg'}`}>
@@ -1130,13 +1155,18 @@ function App() {
                     </div>
                   </div>
                   <input id="unitPrice" type="number" step="any" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" required />
-                  {priceCurrency === 'ARS' && unitPrice && parseFloat(unitPrice) > 0 && blueRate > 0 && (
-                    <div className="price-conversion-hint">
-                      ARS ${parseFloat(unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      {' ÷ Blue $'}{blueRate.toLocaleString('es-AR')}
-                      {' = USD $'}{(parseFloat(unitPrice) / blueRate).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  )}
+                  {priceCurrency === 'ARS' && unitPrice && parseFloat(unitPrice) > 0 && rateFor(assetType) > 0 && (() => {
+                    const isCedearLike = assetType === 'cedear' || assetType === 'accion'
+                    const rate = rateFor(assetType)
+                    const rateLabel = isCedearLike ? 'CCL' : 'Blue'
+                    return (
+                      <div className="price-conversion-hint">
+                        ARS ${parseFloat(unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {` ÷ ${rateLabel} $`}{rate.toLocaleString('es-AR')}
+                        {' = USD $'}{(parseFloat(unitPrice) / rate).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
               <div className="form-group">
