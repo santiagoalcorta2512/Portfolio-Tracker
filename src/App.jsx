@@ -54,6 +54,7 @@ const ASSET_COLORS = {
   META: '#0668E1',
   MSFT: '#00A4EF',
   NU: '#9B4DFF',
+  MELI: '#FFE600',
 }
 
 const ACCENT = '#7C9BFF'
@@ -80,6 +81,7 @@ const CEDEAR_RATIO = {
   META: 23,
   MSFT: 30,
   NU: 2,
+  MELI: 120,
 }
 
 const INITIAL_TRANSACTIONS = [
@@ -113,6 +115,9 @@ const INITIAL_TRANSACTIONS = [
   { id: 23, ticker: 'MSFT', assetType: 'cedear', operation: 'buy', quantity: 28, unitPrice: 13.19, date: '2026-04-07T12:00:00.000Z' },
   { id: 24, ticker: 'NU', assetType: 'cedear', operation: 'buy', quantity: 48, unitPrice: 7.33, date: '2026-04-07T12:00:00.000Z' },
   { id: 25, ticker: 'NU', assetType: 'cedear', operation: 'buy', quantity: 50, unitPrice: 7.45, date: '2026-04-07T12:00:00.000Z' },
+  { id: 26, ticker: 'MELI', assetType: 'cedear', operation: 'buy', quantity: 12, unitPrice: 16.03, date: '2026-05-04T12:00:00.000Z' },
+  { id: 27, ticker: 'MELI', assetType: 'cedear', operation: 'buy', quantity: 8, unitPrice: 15.63, date: '2026-05-04T12:00:00.000Z' },
+  { id: 28, ticker: 'NU', assetType: 'cedear', operation: 'buy', quantity: 29, unitPrice: 7.22, date: '2026-05-04T12:00:00.000Z' },
 ]
 
 // ── Helpers ──
@@ -309,6 +314,7 @@ function App() {
   const [operation, setOperation] = useState('buy')
   const [quantity, setQuantity] = useState('')
   const [unitPrice, setUnitPrice] = useState('')
+  const [priceCurrency, setPriceCurrency] = useState('USD')
   const [txDate, setTxDate] = useState(todayStr)
 
   // Persist transactions
@@ -513,19 +519,22 @@ function App() {
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!ticker || !quantity || !unitPrice) return
+    const rawPrice = parseFloat(unitPrice)
+    const usdPrice = priceCurrency === 'ARS' ? rawPrice / blueRate : rawPrice
     const tx = {
       id: Date.now(),
       ticker: ticker.toUpperCase(),
       assetType,
       operation,
       quantity: parseFloat(quantity),
-      unitPrice: parseFloat(unitPrice),
+      unitPrice: usdPrice,
       date: new Date(txDate + 'T12:00:00').toISOString(),
     }
     setTransactions((prev) => [...prev, tx])
     setTicker('')
     setQuantity('')
     setUnitPrice('')
+    setPriceCurrency('USD')
     setOperation('buy')
     setTxDate(todayStr)
     setActiveTab('portfolio')
@@ -1113,8 +1122,21 @@ function App() {
                   <input id="quantity" type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="0.00" required />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="unitPrice">Precio unitario (USD)</label>
+                  <div className="price-label-row">
+                    <label htmlFor="unitPrice">Precio unitario</label>
+                    <div className="price-currency-toggle">
+                      <button type="button" className={priceCurrency === 'USD' ? 'active' : ''} onClick={() => setPriceCurrency('USD')}>USD</button>
+                      <button type="button" className={priceCurrency === 'ARS' ? 'active' : ''} onClick={() => setPriceCurrency('ARS')}>ARS</button>
+                    </div>
+                  </div>
                   <input id="unitPrice" type="number" step="any" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" required />
+                  {priceCurrency === 'ARS' && unitPrice && parseFloat(unitPrice) > 0 && blueRate > 0 && (
+                    <div className="price-conversion-hint">
+                      ARS ${parseFloat(unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {' ÷ Blue $'}{blueRate.toLocaleString('es-AR')}
+                      {' = USD $'}{(parseFloat(unitPrice) / blueRate).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="form-group">
