@@ -756,12 +756,12 @@ function App() {
         {/* ════ DASHBOARD ════ */}
         {activeTab === 'dashboard' && (
           <>
-            {/* Hero: dual currency */}
-            <div className="hero hero-dual">
-              <div className="hero-main">
+            {/* Summary bar: total + KPIs en una sola fila */}
+            <div className="summary-bar">
+              <div className="summary-totals">
                 <div className="hero-label">
                   <span className="pill">Patrimonio neto</span>
-                  {!cryptoOffline && <span>· precios en vivo</span>}
+                  {!cryptoOffline && <span>· en vivo</span>}
                   <span className="hero-updated" title="Última actualización de precios">
                     · {formatRelativeTime(lastUpdated)}
                   </span>
@@ -774,59 +774,52 @@ function App() {
                 </div>
                 <div className="hero-delta">
                   {has24hData ? (
-                    <>
-                      <span className={`pct ${portfolio24hPct >= 0 ? 'pos' : 'neg'}`}>
-                        {portfolio24hPct >= 0 ? '↑' : '↓'} {Math.abs(portfolio24hPct).toFixed(2)}%
-                      </span>
-                      <span className="period">· var. 24h</span>
-                    </>
+                    <span className={`pct ${portfolio24hPct >= 0 ? 'pos' : 'neg'}`} title="Variación 24h del portfolio">
+                      {portfolio24hPct >= 0 ? '↑' : '↓'} {Math.abs(portfolio24hPct).toFixed(2)}% 24h
+                    </span>
                   ) : (
-                    <span className="period">· var. 24h sin datos</span>
+                    <span className="period">var. 24h sin datos</span>
                   )}
-                  <span className="hero-sep">·</span>
-                  <span className={`pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                    {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+                  <span className={`pct ${totalPnl >= 0 ? 'pos' : 'neg'}`} title="Retorno total desde la compra">
+                    {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total
                   </span>
-                  <span className="period">desde el inicio</span>
                 </div>
               </div>
-            </div>
-
-            {/* KPIs: 5 columnas */}
-            <div className="kpis kpis-5">
-              <div className="kpi">
-                <div className="kpi-label">Costo base</div>
-                <div className="kpi-value">{fmtUSD(totalCost)}</div>
-                <div className="kpi-sub">Capital invertido</div>
-              </div>
-              <div className="kpi">
-                <div className="kpi-label">Ganancia no realizada</div>
-                <div className={`kpi-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                  {fmtSignedUSD(totalPnl)}
+              <div className="summary-kpis">
+                <div className="kpi">
+                  <div className="kpi-label">Costo base</div>
+                  <div className="kpi-value">{fmtUSD(totalCost)}</div>
+                  <div className="kpi-sub">Capital invertido</div>
                 </div>
-                <div className={`kpi-sub ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                  {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total
+                <div className="kpi">
+                  <div className="kpi-label">Ganancia</div>
+                  <div className={`kpi-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                    {fmtSignedUSD(totalPnl)}
+                  </div>
+                  <div className={`kpi-sub ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                    {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+                  </div>
                 </div>
-              </div>
-              <div className="kpi">
-                <div className="kpi-label">Mejor activo</div>
-                <div className="kpi-value">{bestMover?.ticker || '—'}</div>
-                <div className={`kpi-sub ${bestMover && bestMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
-                  {bestMover ? `${bestMover.pnlPct >= 0 ? '+' : ''}${bestMover.pnlPct.toFixed(2)}%` : ''}
+                <div className="kpi">
+                  <div className="kpi-label">Mejor</div>
+                  <div className="kpi-value">{bestMover?.ticker || '—'}</div>
+                  <div className={`kpi-sub ${bestMover && bestMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                    {bestMover ? `${bestMover.pnlPct >= 0 ? '+' : ''}${bestMover.pnlPct.toFixed(2)}%` : ''}
+                  </div>
                 </div>
-              </div>
-              <div className="kpi">
-                <div className="kpi-label">Peor activo</div>
-                <div className="kpi-value">{worstMover?.ticker || '—'}</div>
-                <div className={`kpi-sub ${worstMover && worstMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
-                  {worstMover ? `${worstMover.pnlPct >= 0 ? '+' : ''}${worstMover.pnlPct.toFixed(2)}%` : ''}
+                <div className="kpi">
+                  <div className="kpi-label">Peor</div>
+                  <div className="kpi-value">{worstMover?.ticker || '—'}</div>
+                  <div className={`kpi-sub ${worstMover && worstMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                    {worstMover ? `${worstMover.pnlPct >= 0 ? '+' : ''}${worstMover.pnlPct.toFixed(2)}%` : ''}
+                  </div>
                 </div>
-              </div>
-              <div className="kpi">
-                <div className="kpi-label">Posiciones</div>
-                <div className="kpi-value">{positions.length}</div>
-                <div className="kpi-sub">
-                  {cryptoCount} crypto · {stockCount} cedears
+                <div className="kpi">
+                  <div className="kpi-label">Posiciones</div>
+                  <div className="kpi-value">{positions.length}</div>
+                  <div className="kpi-sub">
+                    {cryptoCount}c · {stockCount}ce
+                  </div>
                 </div>
               </div>
             </div>
@@ -853,7 +846,7 @@ function App() {
                   </div>
                 </div>
                 {filteredEvolutionData.length > 1 ? (
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={180}>
                     <AreaChart data={filteredEvolutionData} margin={{ top: 8, right: 10, left: 4, bottom: 0 }}>
                       <defs>
                         <linearGradient id="gradValor" x1="0" y1="0" x2="0" y2="1">
@@ -883,7 +876,7 @@ function App() {
                 </div>
                 {donutData.length > 0 ? (
                   <div className="donut-wrap">
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={180}>
                       <PieChart>
                         <Pie
                           data={donutData}
