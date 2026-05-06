@@ -4,15 +4,12 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   AreaChart,
   Area,
   XAxis,
   YAxis,
   CartesianGrid,
-  BarChart,
-  Bar,
 } from 'recharts'
 import './App.css'
 
@@ -163,7 +160,6 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
   const firstDate = new Date(buys[0].date)
   const now = new Date()
 
-  // Sample dates: every 14 days + each transaction date + today
   const sampleSet = new Set()
   const d = new Date(firstDate)
   while (d <= now) {
@@ -179,8 +175,7 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
   const points = dates.map((dateStr) => {
     const dateMs = new Date(dateStr + 'T12:00:00Z').getTime()
 
-    // Replay transactions up to this date
-    const holdings = {} // ticker -> { qty, assetType, cost }
+    const holdings = {}
     let cumCost = 0
     for (const tx of buys) {
       if (new Date(tx.date).getTime() > dateMs + 12 * 3600000) break
@@ -190,7 +185,6 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
       cumCost += tx.quantity * tx.unitPrice
     }
 
-    // Compute portfolio value at this date
     let valor = 0
     for (const [ticker, h] of Object.entries(holdings)) {
       if (h.assetType === 'crypto' && hasHistory) {
@@ -203,7 +197,6 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
           }
         }
       }
-      // Non-crypto or no history: use cost as value
       valor += h.cost
     }
 
@@ -215,7 +208,6 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
     }
   })
 
-  // Last point: use live prices for accuracy
   if (points.length > 0) {
     const last = points[points.length - 1]
     const currentValue = positions.reduce(
@@ -228,8 +220,6 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
 
   return points
 }
-
-// ── Historical price cache (localStorage, 24h TTL) ──
 
 const HIST_CACHE_KEY = 'pt_historical_prices'
 const HIST_CACHE_TTL = 24 * 60 * 60 * 1000
@@ -248,7 +238,6 @@ function setCachedHistorical(data) {
   localStorage.setItem(HIST_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data }))
 }
 
-// Binary-search the closest price in a [[timestamp, price], ...] array
 function findClosestPrice(priceArray, targetMs) {
   if (!priceArray || priceArray.length === 0) return null
   let lo = 0
@@ -270,7 +259,17 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
-// ── Custom tooltip ──
+function formatRelativeTime(ts) {
+  if (!ts) return '—'
+  const diff = Math.max(0, Date.now() - ts)
+  const sec = Math.round(diff / 1000)
+  if (sec < 5) return 'ahora'
+  if (sec < 60) return `hace ${sec}s`
+  const min = Math.round(sec / 60)
+  if (min < 60) return `hace ${min} min`
+  const hr = Math.round(min / 60)
+  return `hace ${hr}h`
+}
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -299,15 +298,19 @@ function App() {
   })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [evoFilter, setEvoFilter] = useState('TODO')
-  const [currency, setCurrency] = useState('USD')
+  const [hideValues, setHideValues] = useState(() => localStorage.getItem('pt_hide_values') === '1')
   const [blueRate, setBlueRate] = useState(BLUE_FALLBACK)
   const [blueLoading, setBlueLoading] = useState(true)
   const [cclRate, setCclRate] = useState(CCL_FALLBACK)
   const [cclLoading, setCclLoading] = useState(true)
   const [cryptoPrices, setCryptoPrices] = useState({})
+  const [crypto24h, setCrypto24h] = useState({})
   const [stockPrices, setStockPrices] = useState({})
+  const [stock24h, setStock24h] = useState({})
   const [historicalPrices, setHistoricalPrices] = useState(() => getCachedHistorical() || {})
   const [cryptoOffline, setCryptoOffline] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const [, setNowTick] = useState(0)
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
 
@@ -320,10 +323,19 @@ function App() {
   const [priceCurrency, setPriceCurrency] = useState('USD')
   const [txDate, setTxDate] = useState(todayStr)
 
-  // Persist transactions
   useEffect(() => {
     localStorage.setItem('pt_transactions', JSON.stringify(transactions))
   }, [transactions])
+
+  useEffect(() => {
+    localStorage.setItem('pt_hide_values', hideValues ? '1' : '0')
+  }, [hideValues])
+
+  // Tick every 30s so "hace Xs" stays fresh
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   // ── Dolar blue ──
   const fetchBlueRate = useCallback(async () => {
@@ -386,17 +398,21 @@ function App() {
       if (!res.ok) throw new Error('CoinGecko error')
       const data = await res.json()
       const prices = {}
+      const changes = {}
       for (const [symbol, cgId] of Object.entries(CRYPTO_MAP)) {
         if (data[cgId]?.usd != null) prices[symbol] = data[cgId].usd
+        if (data[cgId]?.usd_24h_change != null) changes[symbol] = data[cgId].usd_24h_change
       }
       setCryptoPrices(prices)
+      setCrypto24h(changes)
       setCryptoOffline(false)
+      setLastUpdated(Date.now())
     } catch {
       setCryptoOffline(true)
     }
   }, [])
 
-  // ── Stock prices (Yahoo Finance for CEDEARs) ──
+  // ── Stock prices ──
   const fetchStockPrices = useCallback(async () => {
     const currentTx = transactionsRef.current
     const tickers = [
@@ -409,24 +425,33 @@ function App() {
     if (tickers.length === 0) return
 
     const prices = {}
+    const changes = {}
     await Promise.all(
       tickers.map(async (t) => {
         try {
           const res = await fetch(`${API_BASE}/stock?ticker=${t}`)
           if (!res.ok) return
           const data = await res.json()
-          const stockPrice = data?.chart?.result?.[0]?.meta?.regularMarketPrice
+          const meta = data?.chart?.result?.[0]?.meta
+          const stockPrice = meta?.regularMarketPrice
           if (stockPrice != null) {
             const ratio = CEDEAR_RATIO[t] || 1
             prices[t] = stockPrice / ratio
           }
+          // Yahoo gives absolute regularMarketPrice + previousClose. Compute % change.
+          const prev = meta?.chartPreviousClose ?? meta?.previousClose
+          if (stockPrice != null && prev != null && prev > 0) {
+            changes[t] = ((stockPrice - prev) / prev) * 100
+          }
         } catch {
-          // keep fallback
+          // skip
         }
       }),
     )
     if (Object.keys(prices).length > 0) {
       setStockPrices((prev) => ({ ...prev, ...prices }))
+      setStock24h((prev) => ({ ...prev, ...changes }))
+      setLastUpdated(Date.now())
     }
   }, [])
 
@@ -458,11 +483,10 @@ function App() {
     }
   }, [transactions, fetchStockPrices])
 
-  // ── Historical prices (CoinGecko market_chart) ──
+  // ── Historical prices ──
   const [loadingHistorical, setLoadingHistorical] = useState(false)
 
   const fetchHistoricalPrices = useCallback(async () => {
-    // Skip if cache is still valid
     const cached = getCachedHistorical()
     if (cached && Object.keys(cached).length > 0) {
       setHistoricalPrices(cached)
@@ -487,7 +511,6 @@ function App() {
       try {
         if (i > 0) await new Promise((r) => setTimeout(r, 6000))
         let res = await fetch(`${API_BASE}/crypto/history?id=${id}&days=365`)
-        // Retry once on 429 after 30s
         if (res.status === 429) {
           await new Promise((r) => setTimeout(r, 30000))
           res = await fetch(`${API_BASE}/crypto/history?id=${id}&days=365`)
@@ -495,10 +518,10 @@ function App() {
         if (!res.ok) continue
         const data = await res.json()
         if (data.prices) {
-          result[id] = data.prices // [[timestamp, price], ...]
+          result[id] = data.prices
         }
       } catch {
-        // skip this coin, continue with the rest
+        // skip
       }
     }
 
@@ -509,32 +532,47 @@ function App() {
     setLoadingHistorical(false)
   }, [])
 
-  // Load from cache on mount (no API call)
   useEffect(() => {
     const cached = getCachedHistorical()
     if (cached) setHistoricalPrices(cached)
   }, [])
 
-  // ── Auto-fill asset type ──
   useEffect(() => {
     if (!ticker) return
     const existing = transactions.find((t) => t.ticker.toUpperCase() === ticker.toUpperCase())
     if (existing) setAssetType(existing.assetType)
   }, [ticker, transactions])
 
-  // ── Toast ──
   const showToast = (message) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(message)
     toastTimer.current = setTimeout(() => setToast(null), 3000)
   }
 
-  // ── Currency ──
+  // ── Currency helpers ──
+  // Per-asset-type rate: blue for crypto/general, CCL for cedear/accion
   const rateFor = (type) => (type === 'cedear' || type === 'accion' ? cclRate : blueRate)
-  const convert = (usdValue, type) => (currency === 'ARS' ? usdValue * rateFor(type) : usdValue)
-  const formatPrice = (value, type) => {
-    const prefix = currency === 'ARS' ? 'ARS ' : 'USD '
-    return prefix + convert(value, type).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const get24h = (p) => {
+    if (p.assetType === 'crypto') return crypto24h[p.ticker]
+    if (p.assetType === 'cedear' || p.assetType === 'accion') return stock24h[p.ticker]
+    return undefined
+  }
+
+  const fmtUSD = (v) => {
+    if (hideValues) return '••••••'
+    return 'USD ' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  const fmtARS = (v) => {
+    if (hideValues) return '••••••'
+    return 'ARS ' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  }
+  // Render a signed amount: "+USD 100.00" or "-USD 100.00" (vs Number(...).toLocaleString
+  // which would emit "USD -100.00" for negatives).
+  const fmtSignedUSD = (v) => {
+    if (hideValues) return '••••••'
+    const sign = v >= 0 ? '+' : '-'
+    return sign + 'USD ' + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
   // ── Submit ──
@@ -560,8 +598,8 @@ function App() {
     setPriceCurrency('USD')
     setOperation('buy')
     setTxDate(todayStr)
-    setActiveTab('portfolio')
-    showToast('Transaccion registrada')
+    setActiveTab('dashboard')
+    showToast('Transacción registrada')
   }
 
   const handleDelete = (id) => {
@@ -570,6 +608,7 @@ function App() {
 
   const handleRefresh = () => {
     fetchBlueRate()
+    fetchCclRate()
     fetchCryptoPrices()
     fetchStockPrices()
   }
@@ -583,7 +622,28 @@ function App() {
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
-  // Donut: per individual asset
+  // Total ARS = sum(positionValueUSD * rateFor(positionType))
+  const totalArs = positions.reduce(
+    (s, p) => s + getPositionPrice(p, livePrices) * p.quantity * rateFor(p.assetType),
+    0,
+  )
+
+  // Weighted-average 24h portfolio change
+  // Positions without 24h data contribute 0% to the sum (count their value in denominator).
+  const portfolio24hPct = (() => {
+    if (totalValue <= 0) return 0
+    let weighted = 0
+    for (const p of positions) {
+      const ch = get24h(p)
+      if (ch == null) continue
+      const v = getPositionPrice(p, livePrices) * p.quantity
+      weighted += (v / totalValue) * ch
+    }
+    return weighted
+  })()
+
+  const has24hData = positions.some((p) => get24h(p) != null)
+
   const donutData = positions
     .map((p) => ({
       name: p.ticker,
@@ -591,7 +651,6 @@ function App() {
     }))
     .sort((a, b) => b.value - a.value)
 
-  // Ranking by P&L %
   const ranked = positions
     .map((p) => {
       const price = getPositionPrice(p, livePrices)
@@ -600,7 +659,6 @@ function App() {
     })
     .sort((a, b) => b.pnlPct - a.pnlPct)
 
-  // Evolution data for AreaChart
   const evolutionData = computeEvolutionData(transactions, positions, livePrices, historicalPrices)
 
   const filteredEvolutionData = (() => {
@@ -613,22 +671,7 @@ function App() {
     return evolutionData.filter((p) => p.rawDate >= cutoffStr)
   })()
 
-  // Bar data: horizontal, sorted by value desc, with P&L
-  const barData = positions
-    .map((p) => {
-      const valor = getPositionPrice(p, livePrices) * p.quantity
-      const costo = p.avgPrice * p.quantity
-      const pnl = valor - costo
-      return {
-        ticker: p.ticker,
-        Costo: Math.round(costo * 100) / 100,
-        Valor: Math.round(valor * 100) / 100,
-        pnl: Math.round(pnl * 100) / 100,
-      }
-    })
-    .sort((a, b) => b.Valor - a.Valor)
-
-  // Portfolio table groups
+  // Groups ordered crypto, cedear, accion, ...
   const assetTypeOrder = ['crypto', 'cedear', 'accion', 'bono', 'fci']
   const groups = assetTypeOrder
     .map((type) => {
@@ -640,18 +683,32 @@ function App() {
     })
     .filter(Boolean)
 
-  // ── Render ──
-
-  // Hero display: split value into whole/cents parts
-  const heroValueRaw = Math.abs(convert(totalValue))
-  const heroWhole = Math.trunc(heroValueRaw).toLocaleString('es-AR')
-  const heroCents = heroValueRaw.toFixed(2).split('.')[1] || '00'
-
-  const topAsset = donutData[0]
-  const topAssetPct = topAsset && totalValue > 0 ? (topAsset.value / totalValue) * 100 : 0
   const cryptoCount = positions.filter((p) => p.assetType === 'crypto').length
   const stockCount = positions.filter((p) => p.assetType === 'cedear' || p.assetType === 'accion').length
   const bestMover = ranked[0]
+  const worstMover = ranked.length > 1 ? ranked[ranked.length - 1] : null
+
+  // ── Render helpers for hero ──
+  const renderHeroValue = (value, prefix) => {
+    if (hideValues) {
+      return (
+        <div className="hero-value">
+          <span className="currency">{prefix}</span>
+          <span>••••••</span>
+        </div>
+      )
+    }
+    const abs = Math.abs(value)
+    const whole = Math.trunc(abs).toLocaleString('es-AR')
+    const cents = abs.toFixed(2).split('.')[1] || '00'
+    return (
+      <div className="hero-value">
+        <span className="currency">{prefix}</span>
+        <span>{whole}</span>
+        <span className="cents">,{cents}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -665,9 +722,9 @@ function App() {
             <div className="brand-sub serif">Personal portfolio</div>
           </div>
           <div className="nav">
-            {['dashboard', 'portfolio', 'register', 'charts'].map((tab) => (
+            {['dashboard', 'register'].map((tab) => (
               <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-                {{ dashboard: 'Dashboard', portfolio: 'Portfolio', register: 'Registrar', charts: 'Gráficos' }[tab]}
+                {{ dashboard: 'Dashboard', register: 'Registrar' }[tab]}
               </button>
             ))}
           </div>
@@ -684,10 +741,14 @@ function App() {
               <span className="chip-sep">·</span>
               CCL <strong>${cclLoading ? '...' : cclRate.toLocaleString('es-AR')}</strong>
             </div>
-            <div className="seg">
-              <button className={currency === 'USD' ? 'active' : ''} onClick={() => setCurrency('USD')}>USD</button>
-              <button className={currency === 'ARS' ? 'active' : ''} onClick={() => setCurrency('ARS')}>ARS</button>
-            </div>
+            <button
+              className="icon-btn"
+              onClick={() => setHideValues((v) => !v)}
+              title={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
+              aria-label={hideValues ? 'Mostrar valores' : 'Ocultar valores'}
+            >
+              {hideValues ? '🙈' : '👁'}
+            </button>
             <button className="icon-btn" onClick={handleRefresh} title="Actualizar precios">&#8635;</button>
           </div>
         </div>
@@ -695,75 +756,56 @@ function App() {
         {/* ════ DASHBOARD ════ */}
         {activeTab === 'dashboard' && (
           <>
-            {/* Hero */}
-            <div className="hero">
-              <div>
+            {/* Hero: dual currency */}
+            <div className="hero hero-dual">
+              <div className="hero-main">
                 <div className="hero-label">
                   <span className="pill">Patrimonio neto</span>
                   {!cryptoOffline && <span>· precios en vivo</span>}
+                  <span className="hero-updated" title="Última actualización de precios">
+                    · {formatRelativeTime(lastUpdated)}
+                  </span>
                 </div>
-                <div className="hero-value">
-                  <span className="currency">{currency}</span>
-                  <span>{heroWhole}</span>
-                  <span className="cents">,{heroCents}</span>
+                <div className="hero-values">
+                  {renderHeroValue(totalValue, 'USD')}
+                  <div className="hero-secondary">
+                    {renderHeroValue(totalArs, 'ARS')}
+                  </div>
                 </div>
                 <div className="hero-delta">
-                  <span className={`amt ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                    {totalPnl >= 0 ? '+' : ''}
-                    {convert(totalPnl).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                  {has24hData ? (
+                    <>
+                      <span className={`pct ${portfolio24hPct >= 0 ? 'pos' : 'neg'}`}>
+                        {portfolio24hPct >= 0 ? '↑' : '↓'} {Math.abs(portfolio24hPct).toFixed(2)}%
+                      </span>
+                      <span className="period">· var. 24h</span>
+                    </>
+                  ) : (
+                    <span className="period">· var. 24h sin datos</span>
+                  )}
+                  <span className="hero-sep">·</span>
                   <span className={`pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                    {totalPnl >= 0 ? '↑' : '↓'} {Math.abs(totalPnlPct).toFixed(2)}%
+                    {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
                   </span>
-                  <span className="period">· desde el inicio</span>
+                  <span className="period">desde el inicio</span>
                 </div>
-              </div>
-              <div className="hero-right">
-                <div className="hero-tagline">
-                  {positions.length} posiciones entre <em>crypto</em> y CEDEARs argentinos.
-                  {topAsset && <> Top activo: <em>{topAsset.name}</em> con {topAssetPct.toFixed(1)}% del portfolio.</>}
-                </div>
-                {filteredEvolutionData.length > 1 && (
-                  <div className="hero-spark">
-                    <ResponsiveContainer width="100%" height={72}>
-                      <AreaChart data={filteredEvolutionData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="heroSpark" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.28} />
-                            <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <Area
-                          type="monotone"
-                          dataKey="valor"
-                          stroke={ACCENT}
-                          strokeWidth={1.5}
-                          fill="url(#heroSpark)"
-                          dot={false}
-                          connectNulls
-                          isAnimationActive={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* KPIs */}
-            <div className="kpis">
+            {/* KPIs: 5 columnas */}
+            <div className="kpis kpis-5">
               <div className="kpi">
                 <div className="kpi-label">Costo base</div>
-                <div className="kpi-value">{formatPrice(totalCost)}</div>
+                <div className="kpi-value">{fmtUSD(totalCost)}</div>
                 <div className="kpi-sub">Capital invertido</div>
               </div>
               <div className="kpi">
                 <div className="kpi-label">Ganancia no realizada</div>
                 <div className={`kpi-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                  {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
+                  {fmtSignedUSD(totalPnl)}
                 </div>
                 <div className={`kpi-sub ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                  {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total return
+                  {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total
                 </div>
               </div>
               <div className="kpi">
@@ -771,6 +813,13 @@ function App() {
                 <div className="kpi-value">{bestMover?.ticker || '—'}</div>
                 <div className={`kpi-sub ${bestMover && bestMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
                   {bestMover ? `${bestMover.pnlPct >= 0 ? '+' : ''}${bestMover.pnlPct.toFixed(2)}%` : ''}
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Peor activo</div>
+                <div className="kpi-value">{worstMover?.ticker || '—'}</div>
+                <div className={`kpi-sub ${worstMover && worstMover.pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                  {worstMover ? `${worstMover.pnlPct >= 0 ? '+' : ''}${worstMover.pnlPct.toFixed(2)}%` : ''}
                 </div>
               </div>
               <div className="kpi">
@@ -782,19 +831,15 @@ function App() {
               </div>
             </div>
 
-            {/* Evolution chart */}
-            <div className="grid grid-chart">
-              <div className="panel">
+            {/* Middle row: chart compacto + donut */}
+            <div className="grid grid-mid">
+              <div className="panel panel-evolution">
                 <div className="panel-head">
                   <div>
                     <div className="panel-title">Evolución <span className="serif">· valor vs costo</span></div>
                     <div className="panel-sub">Valor de mercado versus capital invertido</div>
                   </div>
                   <div className="panel-head-right">
-                    <div className="chart-legend">
-                      <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT }} />Valor</div>
-                      <div className="legend-item"><span className="legend-swatch" style={{ background: MUTE }} />Invertido</div>
-                    </div>
                     <div className="range-selector">
                       {['1M', '3M', '6M', '1A', 'TODO'].map((f) => (
                         <button key={f} className={evoFilter === f ? 'active' : ''} onClick={() => setEvoFilter(f)}>{f}</button>
@@ -808,8 +853,8 @@ function App() {
                   </div>
                 </div>
                 {filteredEvolutionData.length > 1 ? (
-                  <ResponsiveContainer width="100%" height={320}>
-                    <AreaChart data={filteredEvolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <AreaChart data={filteredEvolutionData} margin={{ top: 8, right: 10, left: 4, bottom: 0 }}>
                       <defs>
                         <linearGradient id="gradValor" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
@@ -817,8 +862,8 @@ function App() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
-                      <XAxis dataKey="date" stroke={MUTE} fontSize={11} tickLine={false} axisLine={{ stroke: LINE }} />
-                      <YAxis stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
+                      <XAxis dataKey="date" stroke={MUTE} fontSize={10} tickLine={false} axisLine={{ stroke: LINE }} />
+                      <YAxis stroke={MUTE} fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} width={44} />
                       <Tooltip content={<ChartTooltip />} />
                       <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.4} strokeDasharray="4 4" />
                       <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="url(#gradValor)" strokeWidth={2} connectNulls={false} />
@@ -828,27 +873,24 @@ function App() {
                   <p className="empty">Registrá transacciones para ver la evolución.</p>
                 )}
               </div>
-            </div>
 
-            {/* Three-column panels: donut, allocation list, movers */}
-            <div className="grid grid-three">
-              <div className="panel">
+              <div className="panel panel-donut">
                 <div className="panel-head">
                   <div>
-                    <div className="panel-title">Distribución <span className="serif">· donut</span></div>
+                    <div className="panel-title">Distribución <span className="serif">· por activo</span></div>
                     <div className="panel-sub">Peso sobre el total</div>
                   </div>
                 </div>
                 {donutData.length > 0 ? (
-                  <>
-                    <ResponsiveContainer width="100%" height={220}>
+                  <div className="donut-wrap">
+                    <ResponsiveContainer width="100%" height={200}>
                       <PieChart>
                         <Pie
                           data={donutData}
                           cx="50%"
                           cy="50%"
-                          innerRadius={50}
-                          outerRadius={82}
+                          innerRadius={48}
+                          outerRadius={78}
                           paddingAngle={2}
                           dataKey="value"
                           nameKey="name"
@@ -883,227 +925,153 @@ function App() {
                           <div key={entry.name} className="donut-legend-item">
                             <span className="alloc-swatch" style={{ background: ASSET_COLORS[entry.name] || '#52525B' }} />
                             <span className="alloc-ticker">{entry.name}</span>
-                            <span className="alloc-pct" style={{ marginLeft: 'auto' }}>{pct.toFixed(1)}%</span>
+                            <span className="alloc-pct">{pct.toFixed(1)}%</span>
                           </div>
                         )
                       })}
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <p className="empty">Sin datos</p>
                 )}
               </div>
+            </div>
 
-              <div className="panel">
-                <div className="panel-head">
-                  <div>
-                    <div className="panel-title">Allocation <span className="serif">· lista</span></div>
-                    <div className="panel-sub">Valor actual por activo</div>
-                  </div>
-                </div>
-                {donutData.length > 0 ? (
-                  <>
-                    <div className="alloc-bar">
-                      {donutData.map((entry) => (
-                        <div key={entry.name} style={{ background: ASSET_COLORS[entry.name] || '#52525B', flex: entry.value / totalValue }} />
-                      ))}
-                    </div>
-                    <div className="alloc-list">
-                      {donutData.map((entry) => {
-                        const pct = totalValue > 0 ? (entry.value / totalValue) * 100 : 0
-                        return (
-                          <div key={entry.name} className="alloc-row">
-                            <span className="alloc-swatch" style={{ background: ASSET_COLORS[entry.name] || '#52525B' }} />
-                            <span className="alloc-ticker">{entry.name}</span>
-                            <span className="alloc-pct">{pct.toFixed(1)}%</span>
-                            <span className="alloc-val">${entry.value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <p className="empty">Sin posiciones</p>
-                )}
-              </div>
+            {/* Tabla de posiciones agrupada */}
+            <div className="positions-section">
+              {positions.length === 0 ? (
+                <p className="empty">No hay posiciones. Registrá una transacción para comenzar.</p>
+              ) : (
+                <>
+                  {groups.map((g) => {
+                    const gPnl = g.value - g.cost
+                    const gPnlPct = g.cost > 0 ? (gPnl / g.cost) * 100 : 0
+                    const gWeight = totalValue > 0 ? (g.value / totalValue) * 100 : 0
 
-              <div className="panel">
-                <div className="panel-head">
-                  <div>
-                    <div className="panel-title">Top movers <span className="serif">· retorno total</span></div>
-                    <div className="panel-sub">Desde la compra</div>
-                  </div>
-                </div>
-                {ranked.length > 0 ? (
-                  <div className="ranking-list">
-                    {ranked.map((p) => {
-                      const posValue = p.currentPrice * p.quantity
-                      const weight = totalValue > 0 ? (posValue / totalValue) * 100 : 0
-                      return (
-                        <div key={p.ticker} className="ranking-item">
-                          <div className="mover-logo" style={{ background: ASSET_COLORS[p.ticker] || '#2A2A31' }}>
-                            {p.ticker.slice(0, 3)}
-                          </div>
-                          <div className="mover-body">
-                            <div className="mover-header">
-                              <span className="mover-ticker">{p.ticker}</span>
-                              <span className={`ranking-badge type-${p.assetType}`}>{TYPE_LABELS[p.assetType]}</span>
-                            </div>
-                            <div className="mover-sub">{formatPrice(posValue, p.assetType)} · {weight.toFixed(1)}%</div>
-                          </div>
-                          <div className="mover-side">
-                            <span className={`mover-pct ${p.pnlPct >= 0 ? 'pos' : 'neg'}`}>
-                              {p.pnlPct >= 0 ? '+' : ''}{p.pnlPct.toFixed(2)}%
-                            </span>
-                          </div>
+                    return (
+                      <div key={g.type} className="portfolio-group">
+                        <div className="group-title" style={{ borderLeftColor: TYPE_BORDER[g.type] }}>
+                          <span className="group-title-label">{g.label}</span>
+                          <span className="group-title-meta">
+                            {g.positions.length} {g.positions.length === 1 ? 'posición' : 'posiciones'} · {gWeight.toFixed(1)}% del portfolio
+                          </span>
                         </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="empty">Sin posiciones</p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+                        <div className="ptable-wrap">
+                          <table className="ptable">
+                            <colgroup>
+                              <col style={{ width: '14%' }} />
+                              <col style={{ width: '11%' }} />
+                              <col style={{ width: '10%' }} />
+                              <col style={{ width: '12%' }} />
+                              <col style={{ width: '12%' }} />
+                              <col style={{ width: '13%' }} />
+                              <col style={{ width: '11%' }} />
+                              <col style={{ width: '13%' }} />
+                              <col style={{ width: '40px' }} />
+                            </colgroup>
+                            <thead>
+                              <tr>
+                                <th className="col-text">Activo</th>
+                                <th className="col-num">Cantidad</th>
+                                <th className="col-num">Var 24h</th>
+                                <th className="col-num">Último precio</th>
+                                <th className="col-num">Precio prom.</th>
+                                <th className="col-num">Ganancia</th>
+                                <th className="col-num">Rendim.</th>
+                                <th className="col-num">Monto total</th>
+                                <th className="col-act"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.positions.map((p) => {
+                                const price = getPositionPrice(p, livePrices)
+                                const hasRealPrice = livePrices[p.ticker] != null
+                                const value = price * p.quantity
+                                const cost = p.avgPrice * p.quantity
+                                const pnl = value - cost
+                                const pnlPct = p.avgPrice > 0 ? (price / p.avgPrice - 1) * 100 : 0
+                                const change24h = get24h(p)
 
-        {/* ════ PORTFOLIO ════ */}
-        {activeTab === 'portfolio' && (
-          <>
-            <div className="page-head">
-              <div>
-                <div className="page-eyebrow">Posiciones</div>
-                <h1 className="page-title">Portfolio detallado</h1>
-              </div>
-            </div>
-            <div className="portfolio">
-            {positions.length === 0 ? (
-              <p className="empty">No hay posiciones. Registrá una transacción para comenzar.</p>
-            ) : (
-              <>
-                {groups.map((g) => {
-                  const gPnl = g.value - g.cost
-                  const gPnlPct = g.cost > 0 ? (gPnl / g.cost) * 100 : 0
-                  const gWeight = totalValue > 0 ? (g.value / totalValue) * 100 : 0
-
-                  return (
-                    <div key={g.type} className="portfolio-group">
-                      <div className="group-title" style={{ borderLeftColor: TYPE_BORDER[g.type] }}>
-                        <span className="group-title-label">{g.label}</span>
-                        <span className="group-title-meta">
-                          {g.positions.length} {g.positions.length === 1 ? 'posición' : 'posiciones'}
-                        </span>
+                                return (
+                                  <tr key={p.ticker}>
+                                    <td className="cell-ticker">
+                                      <span className="ticker-name" style={{ color: ASSET_COLORS[p.ticker] || '#fff' }}>{p.ticker}</span>
+                                    </td>
+                                    <td className="col-num">{p.quantity.toLocaleString('es-AR', { maximumFractionDigits: 8 })}</td>
+                                    <td className="col-num">
+                                      {change24h != null ? (
+                                        <span className={`pnl-pct ${change24h >= 0 ? 'pos' : 'neg'}`}>
+                                          {change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%
+                                        </span>
+                                      ) : (
+                                        <span className="dim">—</span>
+                                      )}
+                                    </td>
+                                    <td className="col-num">
+                                      {fmtUSD(price)}
+                                      {!hasRealPrice && <span className="estimated-icon" title="Precio promedio de compra"> ~</span>}
+                                    </td>
+                                    <td className="col-num dim">{fmtUSD(p.avgPrice)}</td>
+                                    <td className={`col-num ${pnl >= 0 ? 'positive' : 'negative'}`}>
+                                      {fmtSignedUSD(pnl)}
+                                    </td>
+                                    <td className="col-num">
+                                      <span className={`pnl-pct ${pnlPct >= 0 ? 'pos' : 'neg'}`}>
+                                        {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+                                      </span>
+                                    </td>
+                                    <td className="col-num">{fmtUSD(value)}</td>
+                                    <td className="col-act">
+                                      <button
+                                        className="row-delete"
+                                        onClick={() => transactions.filter((t) => t.ticker === p.ticker).forEach((t) => handleDelete(t.id))}
+                                        title="Eliminar"
+                                      >&times;</button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot>
+                              <tr className="subtotal-row">
+                                <td className="subtotal-label" colSpan={5}>Subtotal · {g.label}</td>
+                                <td className={`col-num ${gPnl >= 0 ? 'positive' : 'negative'}`}>
+                                  {fmtSignedUSD(gPnl)}
+                                </td>
+                                <td className="col-num">
+                                  <span className={`pnl-pct ${gPnlPct >= 0 ? 'pos' : 'neg'}`}>
+                                    {gPnlPct >= 0 ? '+' : ''}{gPnlPct.toFixed(2)}%
+                                  </span>
+                                </td>
+                                <td className="col-num">{fmtUSD(g.value)}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
                       </div>
-                      <div className="ptable-wrap">
-                        <table className="ptable">
-                          <colgroup>
-                            <col style={{ width: '16%' }} />
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '11%' }} />
-                            <col style={{ width: '14%' }} />
-                            <col style={{ width: '12%' }} />
-                            <col style={{ width: '8%' }} />
-                            <col style={{ width: '44px' }} />
-                          </colgroup>
-                          <thead>
-                            <tr>
-                              <th className="col-text">Activo</th>
-                              <th className="col-num">Cantidad</th>
-                              <th className="col-num">Precio</th>
-                              <th className="col-num">Valor</th>
-                              <th className="col-num">Costo</th>
-                              <th className="col-num">P&amp;L</th>
-                              <th className="col-num">P&amp;L %</th>
-                              <th className="col-num">% Port.</th>
-                              <th className="col-act"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {g.positions.map((p) => {
-                              const price = getPositionPrice(p, livePrices)
-                              const hasRealPrice = livePrices[p.ticker] != null
-                              const value = price * p.quantity
-                              const cost = p.avgPrice * p.quantity
-                              const pnl = value - cost
-                              const pnlPct = p.avgPrice > 0 ? (price / p.avgPrice - 1) * 100 : 0
-                              const weight = totalValue > 0 ? (value / totalValue) * 100 : 0
-
-                              return (
-                                <tr key={p.ticker}>
-                                  <td className="cell-ticker">
-                                    <span className="ticker-name" style={{ color: ASSET_COLORS[p.ticker] || '#fff' }}>{p.ticker}</span>
-                                  </td>
-                                  <td className="col-num">{p.quantity.toLocaleString('es-AR', { maximumFractionDigits: 8 })}</td>
-                                  <td className="col-num">
-                                    {formatPrice(price, p.assetType)}
-                                    {!hasRealPrice && <span className="estimated-icon" title="Precio promedio de compra"> ~</span>}
-                                  </td>
-                                  <td className="col-num">{formatPrice(value, p.assetType)}</td>
-                                  <td className="col-num dim">{formatPrice(cost, p.assetType)}</td>
-                                  <td className={`col-num ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                                    {pnl >= 0 ? '+' : ''}{formatPrice(pnl, p.assetType)}
-                                  </td>
-                                  <td className="col-num">
-                                    <span className={`pnl-pct ${pnlPct >= 0 ? 'pos' : 'neg'}`}>
-                                      {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
-                                    </span>
-                                  </td>
-                                  <td className="col-num dim">{weight.toFixed(1)}%</td>
-                                  <td className="col-act">
-                                    <button
-                                      className="row-delete"
-                                      onClick={() => transactions.filter((t) => t.ticker === p.ticker).forEach((t) => handleDelete(t.id))}
-                                      title="Eliminar"
-                                    >&times;</button>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                          <tfoot>
-                            <tr className="subtotal-row">
-                              <td className="subtotal-label" colSpan={3}>Subtotal · {g.label}</td>
-                              <td className="col-num">{formatPrice(g.value, g.type)}</td>
-                              <td className="col-num dim">{formatPrice(g.cost, g.type)}</td>
-                              <td className={`col-num ${gPnl >= 0 ? 'positive' : 'negative'}`}>
-                                {gPnl >= 0 ? '+' : ''}{formatPrice(gPnl, g.type)}
-                              </td>
-                              <td className="col-num">
-                                <span className={`pnl-pct ${gPnlPct >= 0 ? 'pos' : 'neg'}`}>
-                                  {gPnlPct >= 0 ? '+' : ''}{gPnlPct.toFixed(2)}%
-                                </span>
-                              </td>
-                              <td className="col-num dim">{gWeight.toFixed(1)}%</td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
+                    )
+                  })}
+                  <div className="portfolio-grand-total">
+                    <div className="grand-total-label">
+                      <span className="grand-eyebrow">Total del portfolio</span>
+                      <span className="grand-meta">
+                        {positions.length} posiciones · costo {fmtUSD(totalCost)}
+                      </span>
                     </div>
-                  )
-                })}
-                <div className="portfolio-grand-total">
-                  <div className="grand-total-label">
-                    <span className="grand-eyebrow">Total del portfolio</span>
-                    <span className="grand-meta">
-                      {positions.length} posiciones · costo {formatPrice(totalCost)}
-                    </span>
+                    <div className="grand-total-numbers">
+                      <span className="grand-total-value">{fmtUSD(totalValue)}</span>
+                      <span className="grand-total-value-ars">{fmtARS(totalArs)}</span>
+                      <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
+                        {fmtSignedUSD(totalPnl)}
+                      </span>
+                      <span className={`pnl-pct grand-total-pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
+                        {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="grand-total-numbers">
-                    <span className="grand-total-value">{formatPrice(totalValue)}</span>
-                    <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-                      {totalPnl >= 0 ? '+' : ''}{formatPrice(totalPnl)}
-                    </span>
-                    <span className={`pnl-pct grand-total-pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                      {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
             </div>
           </>
         )}
@@ -1177,94 +1145,8 @@ function App() {
             </form>
           </>
         )}
-
-        {/* ════ GRAFICOS ════ */}
-        {activeTab === 'charts' && (
-          <>
-            <div className="page-head">
-              <div>
-                <div className="page-eyebrow">Analítica</div>
-                <h1 className="page-title">Gráficos</h1>
-              </div>
-            </div>
-            <div className="charts-tab">
-              <div className="chart-section">
-                <div className="section-header">
-                  <div>
-                    <h3 className="section-title">Evolución del portfolio</h3>
-                    <div className="panel-sub">Valor total y costo invertido a lo largo del tiempo</div>
-                  </div>
-                  <div className="section-header-right">
-                    <div className="chart-legend">
-                      <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT }} />Valor</div>
-                      <div className="legend-item"><span className="legend-swatch" style={{ background: MUTE }} />Invertido</div>
-                    </div>
-                    <div className="evo-filters">
-                      {['1M', '3M', '6M', '1A', 'TODO'].map((f) => (
-                        <button key={f} className={`evo-filter-btn${evoFilter === f ? ' active' : ''}`} onClick={() => setEvoFilter(f)}>{f}</button>
-                      ))}
-                    </div>
-                    {Object.keys(historicalPrices).length === 0 && (
-                      <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
-                        {loadingHistorical ? 'Cargando...' : 'Cargar históricos'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {filteredEvolutionData.length > 1 ? (
-                  <ResponsiveContainer width="100%" height={380}>
-                    <AreaChart data={filteredEvolutionData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="gradVal2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
-                          <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
-                      <XAxis dataKey="date" stroke={MUTE} fontSize={11} tickLine={false} axisLine={{ stroke: LINE }} />
-                      <YAxis stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.4} strokeDasharray="4 4" />
-                      <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="url(#gradVal2)" strokeWidth={2} connectNulls={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="empty">Registrá transacciones para ver la evolución.</p>
-                )}
-              </div>
-
-              <div className="chart-section">
-                <div className="section-header">
-                  <div>
-                    <h3 className="section-title">Valor vs costo <span className="serif">· por activo</span></h3>
-                    <div className="panel-sub">Comparación de capital invertido y valor de mercado</div>
-                  </div>
-                  <div className="chart-legend">
-                    <div className="legend-item"><span className="legend-swatch" style={{ background: '#2A2A31', height: 8 }} />Costo</div>
-                    <div className="legend-item"><span className="legend-swatch" style={{ background: ACCENT, height: 8 }} />Valor</div>
-                  </div>
-                </div>
-                {barData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={Math.max(260, barData.length * 56)}>
-                    <BarChart data={barData} layout="vertical" margin={{ top: 10, right: 80, left: 10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} horizontal={false} />
-                      <YAxis type="category" dataKey="ticker" stroke={MUTE} fontSize={12} width={60} tickLine={false} axisLine={false} />
-                      <XAxis type="number" stroke={MUTE} fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v}`} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Bar dataKey="Costo" fill="#2A2A31" radius={[0, 5, 5, 0]} barSize={18} />
-                      <Bar dataKey="Valor" fill={ACCENT} radius={[0, 5, 5, 0]} barSize={18} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="empty">Sin datos para graficar.</p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
       </div>
 
-      {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )

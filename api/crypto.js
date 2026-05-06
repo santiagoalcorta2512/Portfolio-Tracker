@@ -4,7 +4,7 @@ export default async function handler(req, res) {
 
   try {
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd`,
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd&include_24hr_change=true`,
     )
     if (!response.ok) throw new Error(`coingecko ${response.status}`)
     const data = await response.json()
