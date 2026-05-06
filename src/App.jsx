@@ -298,6 +298,7 @@ function App() {
   })
   const [activeTab, setActiveTab] = useState('dashboard')
   const [evoFilter, setEvoFilter] = useState('TODO')
+  const [currency, setCurrency] = useState(() => localStorage.getItem('pt_currency') || 'USD')
   const [hideValues, setHideValues] = useState(() => localStorage.getItem('pt_hide_values') === '1')
   const [blueRate, setBlueRate] = useState(BLUE_FALLBACK)
   const [blueLoading, setBlueLoading] = useState(true)
@@ -330,6 +331,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('pt_hide_values', hideValues ? '1' : '0')
   }, [hideValues])
+
+  useEffect(() => {
+    localStorage.setItem('pt_currency', currency)
+  }, [currency])
 
   // Tick every 30s so "hace Xs" stays fresh
   useEffect(() => {
@@ -559,20 +564,27 @@ function App() {
     return undefined
   }
 
-  const fmtUSD = (v) => {
+  // Format a USD-denominated value, converting to ARS via the asset type's rate
+  // when the currency toggle is set to ARS. For totals/aggregates, pass the
+  // pre-computed `arsValue` (sum of per-position ARS) for accurate consolidated
+  // conversion; otherwise the per-type rate is used.
+  const fmt = (usdValue, type, arsValue) => {
     if (hideValues) return '••••••'
-    return 'USD ' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    if (currency === 'ARS') {
+      const ars = arsValue != null ? arsValue : usdValue * rateFor(type)
+      return 'ARS ' + Math.round(ars).toLocaleString('es-AR')
+    }
+    return 'USD ' + Number(usdValue).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
-  const fmtARS = (v) => {
+  // Signed variant: "+USD 100.00" / "-ARS 12.345" (vs toLocaleString which emits "USD -100.00").
+  const fmtSigned = (usdValue, type, arsValue) => {
     if (hideValues) return '••••••'
-    return 'ARS ' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-  }
-  // Render a signed amount: "+USD 100.00" or "-USD 100.00" (vs Number(...).toLocaleString
-  // which would emit "USD -100.00" for negatives).
-  const fmtSignedUSD = (v) => {
-    if (hideValues) return '••••••'
-    const sign = v >= 0 ? '+' : '-'
-    return sign + 'USD ' + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const sign = usdValue >= 0 ? '+' : '-'
+    if (currency === 'ARS') {
+      const ars = arsValue != null ? arsValue : Math.abs(usdValue) * rateFor(type)
+      return sign + 'ARS ' + Math.round(Math.abs(ars)).toLocaleString('es-AR')
+    }
+    return sign + 'USD ' + Math.abs(usdValue).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
   // ── Submit ──
@@ -622,11 +634,16 @@ function App() {
   const totalPnl = totalValue - totalCost
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0
 
-  // Total ARS = sum(positionValueUSD * rateFor(positionType))
+  // Per-asset-type consolidated ARS totals (blue for crypto, CCL for cedear/accion).
   const totalArs = positions.reduce(
     (s, p) => s + getPositionPrice(p, livePrices) * p.quantity * rateFor(p.assetType),
     0,
   )
+  const totalCostArs = positions.reduce(
+    (s, p) => s + p.avgPrice * p.quantity * rateFor(p.assetType),
+    0,
+  )
+  const totalPnlArs = totalArs - totalCostArs
 
   // Weighted-average 24h portfolio change
   // Positions without 24h data contribute 0% to the sum (count their value in denominator).
@@ -749,6 +766,10 @@ function App() {
             >
               {hideValues ? '🙈' : '👁'}
             </button>
+            <div className="seg" role="group" aria-label="Moneda">
+              <button className={currency === 'USD' ? 'active' : ''} onClick={() => setCurrency('USD')}>USD</button>
+              <button className={currency === 'ARS' ? 'active' : ''} onClick={() => setCurrency('ARS')}>ARS</button>
+            </div>
             <button className="icon-btn" onClick={handleRefresh} title="Actualizar precios">&#8635;</button>
           </div>
         </div>
@@ -761,40 +782,34 @@ function App() {
               <div className="summary-totals">
                 <div className="hero-label">
                   <span className="pill">Patrimonio neto</span>
-                  {!cryptoOffline && <span>· en vivo</span>}
                   <span className="hero-updated" title="Última actualización de precios">
-                    · {formatRelativeTime(lastUpdated)}
+                    {formatRelativeTime(lastUpdated)}
                   </span>
                 </div>
                 <div className="hero-values">
-                  {renderHeroValue(totalValue, 'USD')}
-                  <div className="hero-secondary">
-                    {renderHeroValue(totalArs, 'ARS')}
-                  </div>
-                </div>
-                <div className="hero-delta">
+                  {currency === 'ARS'
+                    ? renderHeroValue(totalArs, 'ARS')
+                    : renderHeroValue(totalValue, 'USD')}
                   {has24hData ? (
-                    <span className={`pct ${portfolio24hPct >= 0 ? 'pos' : 'neg'}`} title="Variación 24h del portfolio">
-                      {portfolio24hPct >= 0 ? '↑' : '↓'} {Math.abs(portfolio24hPct).toFixed(2)}% 24h
+                    <span className={`hero-24h ${portfolio24hPct >= 0 ? 'pos' : 'neg'}`} title="Variación 24h del portfolio">
+                      {portfolio24hPct >= 0 ? '↑' : '↓'} {Math.abs(portfolio24hPct).toFixed(2)}%
+                      <span className="hero-24h-tag">24h</span>
                     </span>
                   ) : (
-                    <span className="period">var. 24h sin datos</span>
+                    <span className="hero-24h muted">— 24h</span>
                   )}
-                  <span className={`pct ${totalPnl >= 0 ? 'pos' : 'neg'}`} title="Retorno total desde la compra">
-                    {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}% total
-                  </span>
                 </div>
               </div>
               <div className="summary-kpis">
                 <div className="kpi">
                   <div className="kpi-label">Costo base</div>
-                  <div className="kpi-value">{fmtUSD(totalCost)}</div>
+                  <div className="kpi-value">{fmt(totalCost, undefined, totalCostArs)}</div>
                   <div className="kpi-sub">Capital invertido</div>
                 </div>
                 <div className="kpi">
                   <div className="kpi-label">Ganancia</div>
                   <div className={`kpi-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
-                    {fmtSignedUSD(totalPnl)}
+                    {fmtSigned(totalPnl, undefined, totalPnlArs)}
                   </div>
                   <div className={`kpi-sub ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
                     {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
@@ -818,7 +833,7 @@ function App() {
                   <div className="kpi-label">Posiciones</div>
                   <div className="kpi-value">{positions.length}</div>
                   <div className="kpi-sub">
-                    {cryptoCount}c · {stockCount}ce
+                    {cryptoCount} crypto · {stockCount} cedears
                   </div>
                 </div>
               </div>
@@ -1001,19 +1016,19 @@ function App() {
                                       )}
                                     </td>
                                     <td className="col-num">
-                                      {fmtUSD(price)}
+                                      {fmt(price, p.assetType)}
                                       {!hasRealPrice && <span className="estimated-icon" title="Precio promedio de compra"> ~</span>}
                                     </td>
-                                    <td className="col-num dim">{fmtUSD(p.avgPrice)}</td>
+                                    <td className="col-num dim">{fmt(p.avgPrice, p.assetType)}</td>
                                     <td className={`col-num ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                                      {fmtSignedUSD(pnl)}
+                                      {fmtSigned(pnl, p.assetType)}
                                     </td>
                                     <td className="col-num">
                                       <span className={`pnl-pct ${pnlPct >= 0 ? 'pos' : 'neg'}`}>
                                         {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
                                       </span>
                                     </td>
-                                    <td className="col-num">{fmtUSD(value)}</td>
+                                    <td className="col-num">{fmt(value, p.assetType)}</td>
                                     <td className="col-act">
                                       <button
                                         className="row-delete"
@@ -1029,14 +1044,14 @@ function App() {
                               <tr className="subtotal-row">
                                 <td className="subtotal-label" colSpan={5}>Subtotal · {g.label}</td>
                                 <td className={`col-num ${gPnl >= 0 ? 'positive' : 'negative'}`}>
-                                  {fmtSignedUSD(gPnl)}
+                                  {fmtSigned(gPnl, g.type)}
                                 </td>
                                 <td className="col-num">
                                   <span className={`pnl-pct ${gPnlPct >= 0 ? 'pos' : 'neg'}`}>
                                     {gPnlPct >= 0 ? '+' : ''}{gPnlPct.toFixed(2)}%
                                   </span>
                                 </td>
-                                <td className="col-num">{fmtUSD(g.value)}</td>
+                                <td className="col-num">{fmt(g.value, g.type)}</td>
                                 <td></td>
                               </tr>
                             </tfoot>
@@ -1049,14 +1064,13 @@ function App() {
                     <div className="grand-total-label">
                       <span className="grand-eyebrow">Total del portfolio</span>
                       <span className="grand-meta">
-                        {positions.length} posiciones · costo {fmtUSD(totalCost)}
+                        {positions.length} posiciones · costo {fmt(totalCost, undefined, totalCostArs)}
                       </span>
                     </div>
                     <div className="grand-total-numbers">
-                      <span className="grand-total-value">{fmtUSD(totalValue)}</span>
-                      <span className="grand-total-value-ars">{fmtARS(totalArs)}</span>
+                      <span className="grand-total-value">{fmt(totalValue, undefined, totalArs)}</span>
                       <span className={`grand-total-pnl ${totalPnl >= 0 ? 'positive' : 'negative'}`}>
-                        {fmtSignedUSD(totalPnl)}
+                        {fmtSigned(totalPnl, undefined, totalPnlArs)}
                       </span>
                       <span className={`pnl-pct grand-total-pct ${totalPnl >= 0 ? 'pos' : 'neg'}`}>
                         {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%

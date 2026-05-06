@@ -146,19 +146,19 @@ button { -webkit-tap-highlight-color: transparent; }
   display: flex;
   align-items: stretch;
   gap: 28px;
-  padding: 14px 0;
+  padding: 16px 0;
   margin-top: 4px;
   border-bottom: 1px solid var(--line);
 }
 .summary-totals {
   flex: 0 0 auto;
   min-width: 280px;
-  max-width: 360px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-  padding-right: 24px;
+  gap: 8px;
+  padding-right: 28px;
   border-right: 1px solid var(--line);
 }
 .summary-kpis {
@@ -167,9 +167,9 @@ button { -webkit-tap-highlight-color: transparent; }
   grid-template-columns: repeat(5, 1fr);
 }
 
-/* Hero label (compact) */
+/* Hero label */
 .hero-label {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   color: var(--text-mute); font-size: 10.5px; font-weight: 500;
   letter-spacing: 0.08em; text-transform: uppercase;
   flex-wrap: wrap;
@@ -187,12 +187,12 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .hero-values {
-  display: flex; align-items: baseline; gap: 14px;
+  display: flex; align-items: baseline; gap: 12px;
   flex-wrap: wrap;
 }
 .hero-value {
   font-variant-numeric: tabular-nums;
-  font-size: 36px; font-weight: 400;
+  font-size: 38px; font-weight: 400;
   letter-spacing: -0.035em; line-height: 1;
   display: flex; align-items: baseline; gap: 8px;
   color: var(--text);
@@ -200,37 +200,35 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .hero-value .currency {
   font-size: 12px; color: var(--text-mute); font-weight: 500;
-  transform: translateY(-10px);
+  transform: translateY(-12px);
   letter-spacing: 0.02em;
 }
 .hero-value .cents {
   font-size: 18px; color: var(--text-dim); font-weight: 300;
 }
-.hero-secondary .hero-value {
-  font-size: 18px;
-  color: var(--text-dim);
-  letter-spacing: -0.02em;
-}
-.hero-secondary .hero-value .currency {
-  font-size: 10px; transform: translateY(-5px);
-}
-.hero-secondary .hero-value .cents {
-  font-size: 12px;
-}
 
-.hero-delta {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; flex-wrap: wrap;
-}
-.hero-delta .pct {
-  display: inline-flex; gap: 3px;
-  padding: 2px 7px; border-radius: 5px;
+/* Var 24h inline next to the main value */
+.hero-24h {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 6px;
   font-family: 'Geist Mono', monospace;
-  font-weight: 500; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500; font-size: 12px;
+  white-space: nowrap;
 }
-.hero-delta .pct.pos { background: rgba(74,222,128,.12); color: var(--pos); }
-.hero-delta .pct.neg { background: rgba(248,113,113,.12); color: var(--neg); }
-.hero-delta .period { color: var(--text-mute); }
+.hero-24h.pos { background: rgba(74,222,128,.12); color: var(--pos); }
+.hero-24h.neg { background: rgba(248,113,113,.12); color: var(--neg); }
+.hero-24h.muted {
+  background: var(--bg-elev); border: 1px solid var(--line);
+  color: var(--text-mute);
+}
+.hero-24h-tag {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
 
 /* ── KPIs ── */
 .kpis {
@@ -267,31 +265,35 @@ button { -webkit-tap-highlight-color: transparent; }
 .kpi-sub.pos { color: var(--pos); }
 .kpi-sub.neg { color: var(--neg); }
 
-/* Compact KPIs inside summary-bar */
+/* Compact KPIs inside summary-bar — centered */
 .summary-kpis .kpi {
-  padding: 4px 16px;
+  padding: 4px 12px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  text-align: center;
   border-right: 1px solid var(--line);
+  min-width: 0;
 }
-.summary-kpis .kpi:first-child { padding-left: 0; }
-.summary-kpis .kpi:last-child { border-right: 0; padding-right: 0; }
+.summary-kpis .kpi:last-child { border-right: 0; }
 .summary-kpis .kpi-label {
-  font-size: 9.5px; margin-bottom: 4px;
-  letter-spacing: 0.07em;
+  font-size: 10px; margin-bottom: 5px;
+  letter-spacing: 0.08em;
 }
 .summary-kpis .kpi-value {
   font-size: 17px; letter-spacing: -0.012em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .summary-kpis .kpi-sub {
-  margin-top: 3px; font-size: 11px;
+  margin-top: 4px; font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* ── Grid / Panels ── */
@@ -724,14 +726,6 @@ button { -webkit-tap-highlight-color: transparent; }
   letter-spacing: -0.02em;
   color: var(--text);
 }
-.grand-total-value-ars {
-  font-family: 'Geist Mono', monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--text-dim);
-  letter-spacing: -0.01em;
-}
 .grand-total-pnl {
   font-family: 'Geist Mono', monospace;
   font-variant-numeric: tabular-nums;
@@ -1026,13 +1020,11 @@ button { -webkit-tap-highlight-color: transparent; }
   .icon-btn { width: 36px; height: 36px; }
 
   /* Hero compacto en mobile */
-  .hero-values { gap: 14px; }
+  .hero-values { gap: 10px; }
   .hero-value { font-size: 32px; gap: 7px; }
   .hero-value .currency { font-size: 12px; transform: translateY(-9px); }
   .hero-value .cents { font-size: 16px; }
-  .hero-secondary .hero-value { font-size: 18px; }
-  .hero-secondary .hero-value .currency { font-size: 10px; transform: translateY(-5px); }
-  .hero-secondary .hero-value .cents { font-size: 12px; }
+  .hero-24h { font-size: 11px; padding: 2px 6px; }
 
   /* Page heads */
   .page-head { padding: 28px 0 4px; }
@@ -1102,12 +1094,10 @@ button { -webkit-tap-highlight-color: transparent; }
   .register-form { padding: 20px; }
 
   /* Hero aún más compacto */
-  .hero-values { gap: 10px; }
-  .hero-value { font-size: 28px; gap: 6px; }
+  .hero-values { gap: 8px; }
+  .hero-value { font-size: 26px; gap: 6px; }
   .hero-value .currency { font-size: 11px; transform: translateY(-8px); }
-  .hero-value .cents { font-size: 14px; }
-  .hero-secondary .hero-value { font-size: 16px; }
-  .hero-delta { gap: 8px; font-size: 12px; }
+  .hero-value .cents { font-size: 13px; }
   .hero-label { font-size: 10px; }
   .hero-updated { font-size: 10.5px; }
 
