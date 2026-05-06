@@ -273,16 +273,30 @@ function formatRelativeTime(ts) {
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
+  // Hide the synthetic stacked band keys (lowLine/gain/loss) — only show the actual lines.
+  const visible = payload.filter((e) => e.dataKey === 'invertido' || e.dataKey === 'valor')
+  if (visible.length === 0) return null
   return (
     <div className="chart-tooltip">
       <p className="chart-tooltip-label">{label}</p>
-      {payload.map((entry) => (
+      {visible.map((entry) => (
         <p key={entry.dataKey} style={{ color: entry.color }}>
           {entry.name}: USD {Number(entry.value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </p>
       ))}
     </div>
   )
+}
+
+function formatXTick(date) {
+  if (date === 'Hoy') return 'Hoy'
+  // toLocaleDateString('es-AR', { day, month: 'short', year: '2-digit' }) outputs "22 feb. 22".
+  // Pull the abbreviated month + 2-digit year and capitalize.
+  const parts = date.split(' ')
+  if (parts.length < 3) return date
+  const month = parts[parts.length - 2].replace('.', '')
+  const year = parts[parts.length - 1]
+  return month.charAt(0).toUpperCase() + month.slice(1) + ' ' + year
 }
 
 // ── App ──
@@ -537,10 +551,11 @@ function App() {
     setLoadingHistorical(false)
   }, [])
 
+  // Auto-load historicals on mount. fetchHistoricalPrices short-circuits if the
+  // 24h localStorage cache is still valid, so this won't spam CoinGecko.
   useEffect(() => {
-    const cached = getCachedHistorical()
-    if (cached) setHistoricalPrices(cached)
-  }, [])
+    fetchHistoricalPrices()
+  }, [fetchHistoricalPrices])
 
   useEffect(() => {
     if (!ticker) return
@@ -845,7 +860,9 @@ function App() {
                 <div className="panel-head">
                   <div>
                     <div className="panel-title">Evolución <span className="serif">· valor vs costo</span></div>
-                    <div className="panel-sub">Valor de mercado versus capital invertido</div>
+                    <div className="panel-sub">
+                      Verde: ganancia · Rojo: pérdida {loadingHistorical && '· cargando históricos…'}
+                    </div>
                   </div>
                   <div className="panel-head-right">
                     <div className="range-selector">
@@ -853,33 +870,82 @@ function App() {
                         <button key={f} className={evoFilter === f ? 'active' : ''} onClick={() => setEvoFilter(f)}>{f}</button>
                       ))}
                     </div>
-                    {Object.keys(historicalPrices).length === 0 && (
-                      <button className="load-hist-btn" onClick={fetchHistoricalPrices} disabled={loadingHistorical}>
-                        {loadingHistorical ? 'Cargando...' : 'Cargar históricos'}
-                      </button>
-                    )}
                   </div>
                 </div>
-                {filteredEvolutionData.length > 1 ? (
-                  <ResponsiveContainer width="100%" height={180}>
-                    <AreaChart data={filteredEvolutionData} margin={{ top: 8, right: 10, left: 4, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="gradValor" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
-                          <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
-                      <XAxis dataKey="date" stroke={MUTE} fontSize={10} tickLine={false} axisLine={{ stroke: LINE }} />
-                      <YAxis stroke={MUTE} fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`} width={44} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.4} strokeDasharray="4 4" />
-                      <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="url(#gradValor)" strokeWidth={2} connectNulls={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
+                <div className="evo-chart-wrap">
+                {filteredEvolutionData.length > 1 ? (() => {
+                  // Enrich data with stack-friendly bands for green/red gap shading.
+                  // gain/loss are mutually exclusive at every point; lowLine sets the
+                  // invisible stack baseline so the colored band sits between the lines.
+                  const data = filteredEvolutionData.map((p) => {
+                    if (p.valor == null || p.invertido == null) {
+                      return { ...p, lowLine: null, gain: null, loss: null }
+                    }
+                    const lowLine = Math.min(p.invertido, p.valor)
+                    return {
+                      ...p,
+                      lowLine,
+                      gain: p.valor > p.invertido ? p.valor - p.invertido : 0,
+                      loss: p.valor < p.invertido ? p.invertido - p.valor : 0,
+                    }
+                  })
+                  // Y axis floor: 20% below the lowest plotted value.
+                  let minVal = Infinity
+                  for (const p of data) {
+                    if (p.invertido != null && p.invertido < minVal) minVal = p.invertido
+                    if (p.valor != null && p.valor < minVal) minVal = p.valor
+                  }
+                  const yMin = Number.isFinite(minVal) ? Math.max(0, minVal * 0.8) : 0
+                  // Aim for ~7 ticks regardless of dataset size.
+                  const xInterval = Math.max(0, Math.floor(data.length / 7) - 1)
+                  return (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="gradGain" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#4ADE80" stopOpacity={0.32} />
+                            <stop offset="100%" stopColor="#4ADE80" stopOpacity={0.06} />
+                          </linearGradient>
+                          <linearGradient id="gradLoss" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#F87171" stopOpacity={0.32} />
+                            <stop offset="100%" stopColor="#F87171" stopOpacity={0.06} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          stroke={MUTE}
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={{ stroke: LINE }}
+                          interval={xInterval}
+                          tickFormatter={formatXTick}
+                          tickMargin={6}
+                        />
+                        <YAxis
+                          stroke={MUTE}
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+                          width={40}
+                          domain={[yMin, 'auto']}
+                        />
+                        <Tooltip content={<ChartTooltip />} />
+                        {/* Stacked invisible baseline + colored gain/loss bands */}
+                        <Area type="monotone" dataKey="lowLine" stackId="band" stroke="none" fill="transparent" isAnimationActive={false} activeDot={false} />
+                        <Area type="monotone" dataKey="gain" stackId="band" stroke="none" fill="url(#gradGain)" isAnimationActive={false} activeDot={false} />
+                        <Area type="monotone" dataKey="loss" stackId="band" stroke="none" fill="url(#gradLoss)" isAnimationActive={false} activeDot={false} />
+                        {/* Lines on top */}
+                        <Area type="monotone" dataKey="invertido" name="Invertido" stroke={MUTE} fill="none" strokeWidth={1.2} strokeDasharray="4 4" isAnimationActive={false} activeDot={{ r: 3, fill: MUTE }} />
+                        <Area type="monotone" dataKey="valor" name="Valor" stroke={ACCENT} fill="none" strokeWidth={2.5} connectNulls={false} isAnimationActive={false} activeDot={{ r: 4, fill: ACCENT, stroke: '#fff', strokeWidth: 1 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )
+                })() : (
                   <p className="empty">Registrá transacciones para ver la evolución.</p>
                 )}
+                </div>
               </div>
 
               <div className="panel panel-donut">
