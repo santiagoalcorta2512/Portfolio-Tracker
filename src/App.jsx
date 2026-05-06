@@ -187,21 +187,17 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
 
     let valor = 0
     for (const [ticker, h] of Object.entries(holdings)) {
-      if (h.assetType === 'crypto' && hasHistory) {
-        const cgId = CRYPTO_MAP[ticker]
-        if (cgId && historicalPrices[cgId]) {
-          const price = findClosestPrice(historicalPrices[cgId], dateMs)
-          if (price != null) {
-            valor += h.qty * price
-            continue
-          }
+      if (h.assetType === 'crypto' && hasHistory && historicalPrices[ticker]) {
+        const price = findClosestPrice(historicalPrices[ticker], dateMs)
+        if (price != null) {
+          valor += h.qty * price
+          continue
         }
       }
       valor += h.cost
     }
 
     return {
-      date: new Date(dateStr).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: '2-digit' }),
       rawDate: dateStr,
       invertido: Math.round(cumCost * 100) / 100,
       valor: hasHistory ? Math.round(valor * 100) / 100 : undefined,
@@ -215,13 +211,16 @@ function computeEvolutionData(transactions, positions, livePrices, historicalPri
       0,
     )
     last.valor = Math.round(currentValue * 100) / 100
-    last.date = 'Hoy'
+    last.rawDate = 'Hoy'
   }
 
   return points
 }
 
-const HIST_CACHE_KEY = 'pt_historical_prices'
+// v2: switched from CoinGecko (keyed by cgId like "bitcoin") to CryptoCompare
+// (keyed by ticker like "BTC"). Old cache shape is incompatible — bumping the
+// key forces a fresh fetch and leaves the previous cache orphaned but harmless.
+const HIST_CACHE_KEY = 'pt_historical_prices_v2'
 const HIST_CACHE_TTL = 24 * 60 * 60 * 1000
 
 function getCachedHistorical() {
@@ -271,6 +270,26 @@ function formatRelativeTime(ts) {
   return `hace ${hr}h`
 }
 
+// Capitalized "Abr 25" from a YYYY-MM-DD string (or 'Hoy' as a passthrough).
+// Parsing the ISO date avoids depending on browser-specific es-AR formatting,
+// which can include connector words ("22 de abr. de 25") that break naive splits.
+function formatXTick(rawDate) {
+  if (!rawDate || rawDate === 'Hoy') return 'Hoy'
+  const d = new Date(rawDate + 'T12:00:00Z')
+  if (Number.isNaN(d.getTime())) return rawDate
+  const monthEs = d.toLocaleDateString('es-AR', { month: 'short', timeZone: 'UTC' }).replace(/\./g, '')
+  const cap = monthEs.charAt(0).toUpperCase() + monthEs.slice(1)
+  const yr = String(d.getUTCFullYear()).slice(-2)
+  return `${cap} ${yr}`
+}
+
+function formatTooltipDate(rawDate) {
+  if (!rawDate || rawDate === 'Hoy') return 'Hoy'
+  const d = new Date(rawDate + 'T12:00:00Z')
+  if (Number.isNaN(d.getTime())) return rawDate
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'UTC' })
+}
+
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   // Hide the synthetic stacked band keys (lowLine/gain/loss) — only show the actual lines.
@@ -278,7 +297,7 @@ function ChartTooltip({ active, payload, label }) {
   if (visible.length === 0) return null
   return (
     <div className="chart-tooltip">
-      <p className="chart-tooltip-label">{label}</p>
+      <p className="chart-tooltip-label">{formatTooltipDate(label)}</p>
       {visible.map((entry) => (
         <p key={entry.dataKey} style={{ color: entry.color }}>
           {entry.name}: USD {Number(entry.value).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -286,17 +305,6 @@ function ChartTooltip({ active, payload, label }) {
       ))}
     </div>
   )
-}
-
-function formatXTick(date) {
-  if (date === 'Hoy') return 'Hoy'
-  // toLocaleDateString('es-AR', { day, month: 'short', year: '2-digit' }) outputs "22 feb. 22".
-  // Pull the abbreviated month + 2-digit year and capitalize.
-  const parts = date.split(' ')
-  if (parts.length < 3) return date
-  const month = parts[parts.length - 2].replace('.', '')
-  const year = parts[parts.length - 1]
-  return month.charAt(0).toUpperCase() + month.slice(1) + ' ' + year
 }
 
 // ── App ──
@@ -513,34 +521,38 @@ function App() {
     }
 
     const currentTx = transactionsRef.current
-    const ids = [
+    const symbols = [
       ...new Set(
         currentTx
           .filter((t) => t.assetType === 'crypto')
-          .map((t) => CRYPTO_MAP[t.ticker.toUpperCase()])
-          .filter(Boolean),
+          .map((t) => t.ticker.toUpperCase()),
       ),
     ]
-    if (ids.length === 0) return
+    if (symbols.length === 0) return
 
     setLoadingHistorical(true)
     const result = {}
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i]
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i]
       try {
-        if (i > 0) await new Promise((r) => setTimeout(r, 6000))
-        let res = await fetch(`${API_BASE}/crypto/history?id=${id}&days=365`)
-        if (res.status === 429) {
-          await new Promise((r) => setTimeout(r, 30000))
-          res = await fetch(`${API_BASE}/crypto/history?id=${id}&days=365`)
-        }
+        // CryptoCompare's free tier is generous (~50 req/sec). A small spacer
+        // keeps us comfortably under the limit without the long CoinGecko delays.
+        if (i > 0) await new Promise((r) => setTimeout(r, 200))
+        const res = await fetch(`${API_BASE}/crypto/history?symbol=${symbol}&limit=2000`)
         if (!res.ok) continue
         const data = await res.json()
-        if (data.prices) {
-          result[id] = data.prices
+        // CryptoCompare shape: { Response, Data: { Data: [{ time, close, ... }] } }
+        // Normalize to [[timestamp_ms, close], ...] sorted ascending so findClosestPrice
+        // (which assumes the existing CoinGecko-style array shape) keeps working.
+        const points = data?.Data?.Data
+        if (Array.isArray(points)) {
+          const series = points
+            .filter((p) => p && p.close > 0)
+            .map((p) => [p.time * 1000, p.close])
+          if (series.length > 0) result[symbol] = series
         }
       } catch {
-        // skip
+        // skip this symbol, continue with the rest
       }
     }
 
@@ -889,13 +901,23 @@ function App() {
                       loss: p.valor < p.invertido ? p.invertido - p.valor : 0,
                     }
                   })
-                  // Y axis floor: 20% below the lowest plotted value.
+                  // Y axis bounds: floor at 20% below the lowest plotted value, ceiling 5% above the max.
+                  // Without explicit numeric bounds + baseValue on the lowLine band, recharts auto-domain
+                  // extends down to 0 because stacked areas default their baseline to y=0.
                   let minVal = Infinity
+                  let maxVal = -Infinity
                   for (const p of data) {
-                    if (p.invertido != null && p.invertido < minVal) minVal = p.invertido
-                    if (p.valor != null && p.valor < minVal) minVal = p.valor
+                    if (p.invertido != null) {
+                      if (p.invertido < minVal) minVal = p.invertido
+                      if (p.invertido > maxVal) maxVal = p.invertido
+                    }
+                    if (p.valor != null) {
+                      if (p.valor < minVal) minVal = p.valor
+                      if (p.valor > maxVal) maxVal = p.valor
+                    }
                   }
                   const yMin = Number.isFinite(minVal) ? Math.max(0, minVal * 0.8) : 0
+                  const yMax = Number.isFinite(maxVal) && maxVal > 0 ? maxVal * 1.05 : 100
                   // Aim for ~7 ticks regardless of dataset size.
                   const xInterval = Math.max(0, Math.floor(data.length / 7) - 1)
                   return (
@@ -913,7 +935,7 @@ function App() {
                         </defs>
                         <CartesianGrid strokeDasharray="2 4" stroke={LINE} vertical={false} />
                         <XAxis
-                          dataKey="date"
+                          dataKey="rawDate"
                           stroke={MUTE}
                           fontSize={10}
                           tickLine={false}
@@ -929,11 +951,13 @@ function App() {
                           axisLine={false}
                           tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
                           width={40}
-                          domain={[yMin, 'auto']}
+                          domain={[yMin, yMax]}
+                          allowDataOverflow
                         />
                         <Tooltip content={<ChartTooltip />} />
-                        {/* Stacked invisible baseline + colored gain/loss bands */}
-                        <Area type="monotone" dataKey="lowLine" stackId="band" stroke="none" fill="transparent" isAnimationActive={false} activeDot={false} />
+                        {/* Stacked invisible baseline + colored gain/loss bands.
+                            baseValue=yMin keeps the stack from extending down to 0. */}
+                        <Area type="monotone" dataKey="lowLine" stackId="band" stroke="none" fill="transparent" baseValue={yMin} isAnimationActive={false} activeDot={false} />
                         <Area type="monotone" dataKey="gain" stackId="band" stroke="none" fill="url(#gradGain)" isAnimationActive={false} activeDot={false} />
                         <Area type="monotone" dataKey="loss" stackId="band" stroke="none" fill="url(#gradLoss)" isAnimationActive={false} activeDot={false} />
                         {/* Lines on top */}

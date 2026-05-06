@@ -50,21 +50,28 @@ app.get('/api/crypto', async (req, res) => {
   }
 })
 
-// ── Crypto price history (CoinGecko) ──
+// ── Crypto price history (CryptoCompare) ──
+// CryptoCompare's histoday gives ~2000 daily candles per call without an API
+// key. Response shape: { Data: { Data: [{ time, close, ... }, ...] } }.
 app.get('/api/crypto/history', async (req, res) => {
-  const { id, days } = req.query
-  if (!id) return res.status(400).json({ error: 'Missing id parameter' })
+  const { symbol, limit } = req.query
+  if (!symbol) return res.status(400).json({ error: 'Missing symbol parameter' })
 
+  const lim = Number.parseInt(limit, 10) || 2000
   try {
     const response = await fetch(
-      `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days || 'max'}`,
+      `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${encodeURIComponent(symbol.toUpperCase())}&tsym=USD&limit=${lim}`,
     )
     if (!response.ok) {
       const body = await response.text().catch(() => '')
-      console.error(`[crypto/history] CoinGecko returned ${response.status} for ${id}: ${body.slice(0, 200)}`)
-      return res.status(response.status).json({ error: `CoinGecko ${response.status}` })
+      console.error(`[crypto/history] CryptoCompare returned ${response.status} for ${symbol}: ${body.slice(0, 200)}`)
+      return res.status(response.status).json({ error: `CryptoCompare ${response.status}` })
     }
     const data = await response.json()
+    if (data.Response === 'Error') {
+      console.error(`[crypto/history] CryptoCompare error for ${symbol}: ${data.Message}`)
+      return res.status(502).json({ error: `CryptoCompare: ${data.Message}` })
+    }
     res.json(data)
   } catch (err) {
     console.error('[crypto/history]', err.message)
